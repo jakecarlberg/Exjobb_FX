@@ -71,11 +71,30 @@ end
 [dp] = buildPA(dm, dc);
 [dr] = performanceAttribution(dm, dc, dp);
 
+% -------------------------------------------------------------------------
+% Realized / unrealized FX gains on AR and AP (thesis Eqs. 4.13-4.17)
+% -------------------------------------------------------------------------
+[fxg] = computeFXGains(dm, dc);
 
+fprintf('\n=== FX Gains per Quarter (EUR functional currency) ===\n');
+fprintf('%-12s %12s %12s %12s %12s %12s\n', ...
+  'Period end', 'AR real', 'AR unreal', 'AP real', 'AP unreal', 'Total');
+fprintf('%s\n', repmat('-',1,74));
+for p = 1:length(fxg.periodDates)-1
+  if fxg.AR_total(p)==0 && fxg.AP_total(p)==0, continue; end
+  fprintf('%-12s %12.0f %12.0f %12.0f %12.0f %12.0f\n', ...
+    datestr(fxg.periodDates(p+1),'yyyy-mm-dd'), ...
+    fxg.AR_real(p), fxg.AR_unreal(p), ...
+    fxg.AP_real(p), fxg.AP_unreal(p), fxg.total(p));
+end
+fprintf('%s\n', repmat('-',1,74));
+fprintf('%-12s %12.0f %12.0f %12.0f %12.0f %12.0f\n', 'TOTAL', ...
+  sum(fxg.AR_real), sum(fxg.AR_unreal), ...
+  sum(fxg.AP_real), sum(fxg.AP_unreal), sum(fxg.total));
 
 if (testCase == 1)
   fprintf('Final value LastProcurementPrice = %.10f\n', 57587.9972338254);
   fprintf('Final value InternalPrice        = %.10f\n', 64575.8621360606);
 end
 
-fprintf('Final value current              = %.10f\n', dr.V(end));
+fprintf('\nFinal portfolio value (SEK): %.4f\n', dr.V(end));

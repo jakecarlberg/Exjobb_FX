@@ -91,20 +91,8 @@ for k=1:length(dc.itemNumbers)
       error('Cash paid not consistent with procurement price');
     end
     sBk(iDate) = sBk(iDate) + (PProcurement(iDate) - Pbar(iDate,kk)) * dc.s.transactionQuantityBasicUM(ind(i));
-
-    % Sell bond
-    iiS = [iiS ; iDate];
-    jjS = [jjS ; jBond];
-    xSv = [xSv ; amount];
-    sSv = [sSv ; 0];
-
-    if (iDueDate >= 1)
-      % Buy bond
-      iiB = [iiB ; iDueDate];
-      jjB = [jjB ; jBond];
-      xBv = [xBv ; amount];
-      sBv = [sBv ; 0];
-    end
+    % AP short position is handled by the AP bond loop below (dc.ap.jBond).
+    % Procurement bonds (dc.p.jBond) are kept only for the pricing validation above.
   end
   
   [ii,jj,v] = find(xBk); % x contains sum of buy variables
@@ -250,6 +238,48 @@ for k=1:length(dc.productNumbers)
     
   end
 
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% AP bonds: accounts payable (thesis Eq. 4.39)
+% AP is a SHORT bond position: sell bond when AP is created (order placed),
+% buy bond back when AP is settled (payment made).
+% Note: in the simulated data, order date == delivery date, so these AP bonds
+% span the same period as the procurement bonds above. In real data they differ.
+
+apOrderNums = unique(dc.ap.invoiceNumber);
+for i = 1:length(apOrderNums)
+  jj = find(dc.ap.transactionCode == 10 & dc.ap.invoiceNumber == apOrderNums(i));
+  kk = find(dc.ap.transactionCode == 20 & dc.ap.invoiceNumber == apOrderNums(i));
+
+  if (isempty(jj) || isempty(kk) || dc.ap.jBond(jj) == 0), continue; end
+
+  % Skip if AP is entirely outside the PA date range
+  if (dc.ap.accountingDate(jj) > lastDate || dc.ap.accountingDate(kk) <= firstDate), continue; end
+
+  jBond = dc.assets.indBond(dc.ap.jBond(jj));
+  amount = dc.ap.foreignCurrencyAmount(jj);
+
+  if (dc.ap.accountingDate(jj) > firstDate)
+    iOrderDate = indAllDates(dc.ap.accountingDate(jj)-firstDate+1);
+    % Sell bond: AP created (short position = liability to supplier)
+    iiS = [iiS; iOrderDate];
+    jjS = [jjS; jBond];
+    xSv = [xSv; amount];
+    sSv = [sSv; 0];
+  else
+    % AP was already open at PA start: short position from t=0
+    h0(jBond) = -amount;
+  end
+
+  if (dc.ap.accountingDate(kk) <= lastDate)
+    iPayDate = indAllDates(dc.ap.accountingDate(kk)-firstDate+1);
+    % Buy bond back: AP settled (payment made to supplier)
+    iiB = [iiB; iPayDate];
+    jjB = [jjB; jBond];
+    xBv = [xBv; amount];
+    sBv = [sBv; 0];
+  end
 end
 
 % Data for performance attribution (dp = data performance attribution)

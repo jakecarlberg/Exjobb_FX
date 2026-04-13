@@ -1,4 +1,10 @@
-function [dr] = performanceAttribution(dm, dc, dp)
+function [dr] = performanceAttribution(dm, dc, dp, doPlot)
+% performanceAttribution  Compute PAM decomposition and FX benchmarks.
+%
+%   dr = performanceAttribution(dm, dc, dp)         % plots results
+%   dr = performanceAttribution(dm, dc, dp, false)  % suppress all output (MC mode)
+
+if nargin < 4 || isempty(doPlot), doPlot = true; end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Performance attribution
@@ -56,11 +62,24 @@ end
 % 
 % fprintf('%d %d %d %d\n', VC(2,5), VC1(2,5), VC2(2,5), VC3(2,5))
 
-plot(VC(:,5))
+if doPlot, figure(1); plot(VC(:,5)); title('VC currency 5'); end
 
 V = zeros(M,1);
 for k=1:Nc
   V = V + VC(:,k).*dm.fx{k, iCurPortfolio};
+end
+
+% Portfolio value in EUR (functional currency) - needed for FX benchmarks
+iCurFunctional = find(ismember(dm.cName, 'EUR'));
+V_EUR = zeros(M,1);
+for k=1:Nc
+  V_EUR = V_EUR + VC(:,k).*dm.fx{k, iCurFunctional};
+end
+
+% Portfolio value in SEK with all FX rates frozen at day 1 (constant-currency basis)
+V_SEK_const = zeros(M,1);
+for k=1:Nc
+  V_SEK_const = V_SEK_const + VC(:,k).*dm.fx{k, iCurPortfolio}(1);
 end
 
 
@@ -251,10 +270,29 @@ dVhPtotdf = sum(dVhPdf,2);
 dVhdepsf = zeros(M,1);
 dVhdepsf(2:end) = sum(hI(1:end-1,:).*depsf(2:end,:),2);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PAM FX Benchmarks (thesis Eqs. 4.45-4.47)
+
+f_EUR_SEK = dm.fx{iCurFunctional, iCurPortfolio};  % EUR/SEK rate [M x 1]
+
+% Transactional FX (Eq. 4.45): dPf + dPc
+%   dPf = FX-rate sensitivity of instruments (FX columns of dVhdPxifMat)
+%   dPc = currency-price cross term (dVhdepsf)
+iXifCols = 1:Nc^2;  % First Nc^2 xi columns are FX rate risk factors
+dFX_trans = [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
+
+% Translation FX (Eq. 4.46): actual SEK change minus EUR change at EUR/SEK
+dFX_transl = [0; diff(V) - diff(V_EUR).*f_EUR_SEK(2:end)];
+
+% Constant-currency FX (Eq. 4.47): frozen-FX SEK change minus EUR change at EUR/SEK
+dFX_cc = [0; diff(V_SEK_const) - diff(V_EUR).*f_EUR_SEK(2:end)];
+
 dr.xiName    = dc.xiName;
 dr.hI        = hI;
 dr.hC        = hC;
-dr.V         = V; 
+dr.V         = V;
+dr.V_EUR     = V_EUR;
+dr.V_SEK_const = V_SEK_const;
 dr.dVdI      = dVdI;
 dr.dVhRdf    = dVhRdf;
 dr.dVhDdf    = dVhDdf;
@@ -268,6 +306,12 @@ dr.dVhdepsIf = dVhdepsIf;
 dr.dVhdepsPf = dVhdepsPf;
 dr.dVhPtotdf = dVhPtotdf;
 dr.dVhdepsf  = dVhdepsf;
+dr.dFX_trans  = dFX_trans;
+dr.dFX_transl = dFX_transl;
+dr.dFX_cc     = dFX_cc;
+dr.FX_trans   = cumsum(dFX_trans);
+dr.FX_transl  = cumsum(dFX_transl);
+dr.FX_cc      = cumsum(dFX_cc);
 
 
 dV = diff(V);
@@ -330,34 +374,51 @@ plot([dV-dVd])
 % end
 
 
-if (true)
+if doPlot
   dVall = [dVdI dVhRdf dVhDdf dVdC dVhdPtf dVhdPxif dVhdPqf dVhdepsaf dVhdepsIf dVhdepsPf dVhPtotdf dVhdepsf];
   dVall = dVall(2:end,:);
   [~, ind] = sort(max(abs(dVall),[],1), 'descend');
   Vall = cumsum(dVall,1);
   nPlot = 7;
-  % area(Vall(:,ind(1:nPlot)));
   VallNames = {'dVdI' 'dVhRdf' 'dVhDdf' 'Procurement/Sales gain (dVdC)' 'dVhdPtf' 'Linear risk factors (dVhdPxif)' 'Quadratic risk factors (dVhdPqf)' 'dVhdepsaf' 'dVhdepsIf' 'dVhdepsPf' 'dVhPtotdf' 'dVhdepsf'};
   figure(2);
   plot(Vall(:,ind(1:nPlot)));
   legend(VallNames(ind(1:nPlot)), 'Location', 'Best');
+  title('PAM decomposition (top 7 terms)');
 
   figure(3);
   [~, ind] = sort(max(abs(dVhdPxifMat),[],1), 'descend');
   nPlot = 4;
   plot(cumsum(dVhdPxifMat(:,ind(1:nPlot))));
   legend(dc.xiName(ind(1:nPlot)), 'Location', 'Best');
+  title('Top FX/IR risk factors (cumulative)');
 
   figure(4);
   ind = 8:10;
   plot(Vall(:,ind));
   legend(VallNames(ind), 'Location', 'Best');
+  title('Slippage terms');
 
   figure(5);
-  plot(V);
+  plot(dm.dates, V);
+  datetick('x', 'yyyy'); title('Portfolio value (SEK)');
 
   for i=1:length(VallNames)
     fprintf('%40s %10.2f\n', VallNames{i}, Vall(end,i));
   end
-  
+
+  % -----------------------------------------------------------------------
+  % PAM FX Benchmarks (thesis Eqs. 4.45-4.47)
+  % -----------------------------------------------------------------------
+  figure(6);
+  plot(dm.dates, [dr.FX_trans, dr.FX_transl, dr.FX_cc]);
+  datetick('x', 'yyyy');
+  legend({'Transactional FX (Eq.4.45)', 'Translation FX (Eq.4.46)', 'Constant-currency FX (Eq.4.47)'}, 'Location', 'Best');
+  title('PAM FX Benchmarks (cumulative, SEK)');
+
+  fprintf('\n=== PAM FX Benchmarks (cumulative over full period, SEK) ===\n');
+  fprintf('  Transactional FX     (Eq.4.45): %12.2f\n', dr.FX_trans(end));
+  fprintf('  Translation FX       (Eq.4.46): %12.2f\n', dr.FX_transl(end));
+  fprintf('  Constant-currency FX (Eq.4.47): %12.2f\n', dr.FX_cc(end));
+
 end
