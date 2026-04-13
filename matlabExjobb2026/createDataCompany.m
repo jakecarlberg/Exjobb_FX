@@ -2,6 +2,12 @@ function [dc] = createDataCompany(dm, settings)
 
 dataFolder = settings.dataFolder;
 
+if isfield(settings, 'curFunctional')
+  curFunctional = settings.curFunctional;
+else
+  curFunctional = 'EUR';
+end
+
 load([dataFolder '\itemNumberDictionary'], 'itemNumberDictionary', 'productNumberDictionary');
 
 
@@ -277,7 +283,7 @@ for i=1:length(dc.itemNumbers)
       iCurPurchase = dc.p.iCur(j);
       
       if (length(unique(iCurPurchase))>1)
-        iCurXi = find(ismember(dm.cName, 'SEK')); % Multiple procurement currencies => Set prices in SEK
+        iCurXi = find(ismember(dm.cName, curFunctional)); % Multiple procurement currencies => use functional currency
       else
         iCurXi = iCurPurchase(1); % Only one procurement currency - Use this for pricing
       end
@@ -290,7 +296,7 @@ for i=1:length(dc.itemNumbers)
       if (isempty(ind))
         error('Could not find price for item in BOM structure');
       end
-      iCurXi = find(ismember(dm.cName, 'SEK'));
+      iCurXi = find(ismember(dm.cName, curFunctional));
       rvLastProcurement = clsXiInternalPrice(dc.b.actualFinishDate(ind), dc.b.costPrice(ind));
     end
   end
@@ -347,7 +353,7 @@ dc.productOrderDate = productOrderDate;
 
 fprintf('Done: BOM\n');
 for i=1:length(dc.productNumbers)
-  iCurPrice = find(ismember(dm.cName, 'SEK'));
+  iCurPrice = find(ismember(dm.cName, curFunctional));
   %   dc.assets.add(clsPriceZero(iCurPrice), AssetType.itemManufactured);
   if (strcmp(settings.bomPricing,'DeterministicCashFlows'))
     bom = dc.b(dc.b.product == dc.productNumbers(i), :);

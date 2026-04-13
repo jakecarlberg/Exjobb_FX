@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/Users/jhybn/AppData/Local/AnkiProgramFiles/python/cpython-3.13.5-windows-x86_64-none/python.exe -c ':*)",
+      "Bash(python -c \"import pdfplumber; pdf = pdfplumber.open\\(r'C:\\\\Users\\\\jhybn\\\\OneDrive - Linköpings universitet\\\\EXJOBB Sandvik\\\\Master_Thesis_Sandvik \\(2\\).pdf'\\); pages = pdf.pages; print\\(f'Total pages: {len\\(pages\\)}'\\); text = ''; [text := text + p.extract_text\\(\\) + '\\\\n\\\\n' for p in pages[59:80]]; print\\(text[:5000]\\)\")",
+      "Bash(py --version)",
+      "Bash(where python*)",
+      "Bash(where pdftoppm:*)",
+      "Bash(where pdftotext:*)",
+      "Read(//usr/**)",
+      "Read(//usr/local/**)",
+      "Bash(pdftotext -f 60 -l 80 \"C:\\\\Users\\\\jhybn\\\\OneDrive - Linköpings universitet\\\\EXJOBB Sandvik\\\\Master_Thesis_Sandvik \\(2\\).pdf\" -)"
+    ]
+  }
+}

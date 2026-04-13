@@ -44,8 +44,11 @@ elseif (testCase == 2)
 
   marketDataSet = 'reutersZero';
 elseif (testCase == 3)
-  settings.dataFolder = 'simulatedData';
-  settings.bomPricing = 'StochasticPrices';
+  settings.dataFolder    = 'simulatedData';
+  settings.bomPricing    = 'StochasticPrices';
+  settings.curFunctional = 'EUR';              % Thesis Section 4.3.1
+  settings.startDate     = datenum(2005,1,1);  % Thesis Section 4.2.1: January 2005
+  settings.endDate       = datenum(2025,12,31);% Thesis Section 4.2.1: December 2025
 
   settings.usedItemNumbersOrg = [];
 %   settings.usedItemNumbersOrg = [1];
