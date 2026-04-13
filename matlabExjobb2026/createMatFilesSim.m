@@ -1,4 +1,21 @@
-rng(1);
+function createMatFilesSim(dm, seed, nBOM, verbose)
+% createMatFilesSim  Generate synthetic multi-currency transaction data.
+%
+%   createMatFilesSim(dm, seed, nBOM, verbose)
+%
+%   dm      - market data struct from createDataMarket (provides FX rates)
+%   seed    - RNG seed for reproducibility (default 1)
+%   nBOM    - number of BOM orders to generate (default 15)
+%   verbose - print summary to console (default true)
+%
+% The function writes all .mat files to simulatedData\ and is designed to
+% be called repeatedly inside a Monte Carlo loop (runMC.m).
+
+if nargin < 2 || isempty(seed),    seed    = 1;    end
+if nargin < 3 || isempty(nBOM),    nBOM    = 15;   end
+if nargin < 4 || isempty(verbose), verbose = true; end
+
+rng(seed);
 
 % =========================================================================
 % CURRENCY SETUP
@@ -57,8 +74,8 @@ end
 typeComponents = {[1,2], [3,4,5], [6,7,8,9,10]};
 typeQuantities  = {[5,2], [1,3,10], [1,2,5,4,20]};
 
-nBOM     = 15;
-nPerType =  5;
+% nBOM passed as argument; distribute evenly across 3 product types
+nPerType = ceil(nBOM / 3);
 
 % =========================================================================
 % SALES CURRENCY ASSIGNMENT  (thesis Table 4.5, foreign-only exposure)
@@ -73,7 +90,7 @@ for j = 1:length(saleCurNames)
   saleCurIcur(j) = find(ismember(dm.cName, saleCurNames{j}));
 end
 
-% Assign a sales currency to each of the 15 BOM orders
+% Assign a sales currency to each BOM order
 iSaleCurBOM = randsample(length(saleCurNames), nBOM, true, saleWeights);
 
 % =========================================================================
@@ -120,9 +137,8 @@ bufferEnd   = custPayMean  + 3*custPayStd  + 10;
 iStart = find(dates >= startDate + bufferStart, 1);
 iEnd   = find(dates <= endDate   - bufferEnd,   1, 'last');
 
-% Evenly-spaced manufacturing start dates with small jitter
-bomStartInds = round(linspace(iStart, iEnd, nBOM));
-bomStartInds = sort(max(iStart, min(iEnd, bomStartInds + round(randn(1,nBOM)*5))));
+% Stochastic manufacturing start dates: uniform random across valid window
+bomStartInds = sort(randi([iStart, iEnd], 1, nBOM));
 
 % =========================================================================
 % PRE-ALLOCATE COLUMN VECTORS FOR OUTPUT TABLES
@@ -162,6 +178,21 @@ sa_costPrice  = zeros(nBOM,1); sa_cur      = cell(nBOM,1);
 a_invoiceNum = zeros(2*nBOM,1);  a_txCode  = zeros(2*nBOM,1);
 a_fxAmt      = zeros(2*nBOM,1);  a_cur     = cell(2*nBOM,1);
 a_dueDate    = zeros(2*nBOM,1);  a_accDate = zeros(2*nBOM,1);
+
+% Accounts payable (2 rows per purchase order: order placed + payment made)
+% Mirrors AR structure: code 10 = AP created, code 20 = AP settled
+% Compute exact total POs across all nBOM products
+nTotalPO = 0;
+for ii = 1:nBOM
+  if     ii <= nPerType,    tt = 1;
+  elseif ii <= 2*nPerType,  tt = 2;
+  else,                     tt = 3;
+  end
+  nTotalPO = nTotalPO + length(typeComponents{tt});
+end
+ap_invoiceNum = zeros(2*nTotalPO,1);  ap_txCode  = zeros(2*nTotalPO,1);
+ap_fxAmt      = zeros(2*nTotalPO,1);  ap_cur     = cell(2*nTotalPO,1);
+ap_dueDate    = zeros(2*nTotalPO,1);  ap_accDate = zeros(2*nTotalPO,1);
 
 productOrderDate = zeros(nBOM,1);
 pi = 1;   % running purchase-order index
@@ -282,6 +313,21 @@ for i = 1:nBOM
     p_dueDate(end+1,1)= apDue;
     p_amount(end+1,1) = totalAmtProcCur;
 
+    % Accounts payable rows for this purchase order
+    r1ap = 2*(pi-1)+1;   r2ap = 2*(pi-1)+2;
+
+    ap_invoiceNum(r1ap) = pi;  ap_txCode(r1ap)  = 10;   % AP created at order placement
+    ap_fxAmt(r1ap)      = totalAmtProcCur;
+    ap_cur{r1ap}        = curStr;
+    ap_accDate(r1ap)    = procDate;
+    ap_dueDate(r1ap)    = apDue;
+
+    ap_invoiceNum(r2ap) = pi;  ap_txCode(r2ap)  = 20;   % AP settled at supplier payment
+    ap_fxAmt(r2ap)      = -totalAmtProcCur;
+    ap_cur{r2ap}        = curStr;
+    ap_accDate(r2ap)    = apDue;
+    ap_dueDate(r2ap)    = apDue;
+
     % Stock transaction: procurement receipt (type 25)
     sp_itemNum(end+1,1) = cj;
     sp_txType(end+1,1)  = 25;
@@ -367,15 +413,19 @@ save('simulatedData\stockTransactions',    's');
 save('simulatedData\purchaseOrder',        'p');
 save('simulatedData\itemNumberDictionary', 'itemNumberDictionary', 'productNumberDictionary');
 
-% =========================================================================
-% SUMMARY
-% =========================================================================
-fprintf('\n=== Multi-Currency Simulation Created ===\n');
-fprintf('Date range    : %s  to  %s\n', datestr(startDate), datestr(endDate));
-fprintf('Components    : %d  |  procurement currencies: %s\n', nComponents, strjoin(unique(compCurStr), ', '));
-fprintf('BOM products  : %d  (3 types, %d each)\n', nBOM, nPerType);
-fprintf('Purchase orders: %d\n', size(p,1));
-fprintf('Procurement currencies used: %s\n', strjoin(unique(p.currency)', ', '));
-fprintf('Sales currencies used      : %s\n', strjoin(unique(sa.currency)', ', '));
-fprintf('Functional currency (EUR)  : %s (index %d)\n', curFunctional, iCurFunctional);
-fprintf('Presentation currency (SEK): %s (index %d)\n', curPresentation, iCurPresentation);
+ap = table(ap_invoiceNum, ap_txCode, ap_fxAmt, ap_cur, ap_dueDate, ap_accDate, ...
+  'VariableNames', {'invoiceNumber','transactionCode','foreignCurrencyAmount','currency','dueDate','accountingDate'});
+save('simulatedData\AccountsPayable', 'ap');
+
+if verbose
+  fprintf('\n=== Multi-Currency Simulation Created (seed=%d) ===\n', seed);
+  fprintf('Date range    : %s  to  %s\n', datestr(startDate), datestr(endDate));
+  fprintf('Components    : %d  |  procurement currencies: %s\n', nComponents, strjoin(unique(compCurStr), ', '));
+  fprintf('BOM products  : %d  (nPerType=%d)\n', nBOM, nPerType);
+  fprintf('Purchase orders: %d\n', size(p,1));
+  fprintf('Accounts payable entries: %d\n', size(ap,1));
+  fprintf('Procurement currencies used: %s\n', strjoin(unique(p.currency)', ', '));
+  fprintf('Sales currencies used      : %s\n', strjoin(unique(sa.currency)', ', '));
+end
+
+end % function createMatFilesSim

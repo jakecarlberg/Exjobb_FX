@@ -197,12 +197,32 @@ for i=1:size(a.iCur,1)
 end
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Accounts payable
+% Mirrors AR structure: transactionCode 10 = AP created (order placed),
+%                       transactionCode 20 = AP settled (payment made)
+% Per thesis Eq. 4.39: PAP = -C * exp(-rs(tau)*tau) * e  (negative = obligation)
+
+load([dataFolder '\AccountsPayable'], 'ap');
+
+ap.iCur = zeros(size(ap,1),1);
+
+for i=1:size(ap.iCur,1)
+  iCur = find(ismember(dm.cName, ap.currency(i)));
+  if (isempty(iCur))
+    error('Could not find currency');
+  else
+    ap.iCur(i) = iCur;
+  end
+end
+
 dc.p = p;
 dc.c = c;
 dc.s = s;
 dc.b = b;
 dc.sa = sa;
 dc.a = a;
+dc.ap = ap;
 dc.itemNumberDictionary = itemNumberDictionary;
 dc.productNumberDictionary = productNumberDictionary;
 
@@ -430,6 +450,26 @@ for i=1:length(dc.productNumbers)
   pb = clsPriceBond(dc.a.iCur(jj), dc.a.accountingDate(jj), dc.a.accountingDate(kk), 1, dc.a.iCur(jj));
   id = dc.assets.add(pb, AssetType.zeroCouponBond);
   dc.a.jBond(jj) = id;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Add Zero coupon bond pricing for accounts payable
+% Per thesis: AP ZCB spans from procurement order date (t^proc) to supplier
+% payment date (t^pay). The AP position is SHORT (negative holding = liability).
+
+indPaRangeAP = ((dc.ap.accountingDate>firstDate) & (dc.ap.accountingDate<=lastDate));
+dc.ap.jBond = zeros(size(dc.ap,1),1);
+
+apOrderNums = unique(dc.ap.invoiceNumber);
+for i=1:length(apOrderNums)
+  jj = find(dc.ap.transactionCode == 10 & indPaRangeAP & dc.ap.invoiceNumber == apOrderNums(i));
+  kk = find(dc.ap.transactionCode == 20 & dc.ap.invoiceNumber == apOrderNums(i));
+  if (isempty(jj) || isempty(kk))
+    fprintf('Could not find accounts payable pair for PO %d\n', apOrderNums(i)); continue;
+  end
+  pb = clsPriceBond(dc.ap.iCur(jj), dc.ap.accountingDate(jj), dc.ap.accountingDate(kk), 1, dc.ap.iCur(jj));
+  id = dc.assets.add(pb, AssetType.zeroCouponBond);
+  dc.ap.jBond(jj) = id;
 end
 
 % Create indices from xif, xiI and xiP to xi-vector
