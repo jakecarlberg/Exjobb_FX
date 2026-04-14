@@ -33,10 +33,15 @@ indAllDates = dm.indAllDates;
 iCurFunctional = find(ismember(dm.cName, 'EUR'));
 
 % Helper: FX rate (transaction currency -> EUR) at a given calendar date.
-% Clamps to dm date range; copies last known value for out-of-range dates.
+% Clamps to dm date range; steps back to the last business day if needed.
   function e = getFX(iCur, calDate)
-    d = min(max(calDate, firstDate), lastDate);
-    e = dm.fx{iCur, iCurFunctional}(indAllDates(d - firstDate + 1));
+    d = min(max(round(calDate), firstDate), lastDate);
+    idx = indAllDates(d - firstDate + 1);
+    while isnan(idx) && d > firstDate
+      d = d - 1;
+      idx = indAllDates(d - firstDate + 1);
+    end
+    e = dm.fx{iCur, iCurFunctional}(idx);
   end
 
 % =========================================================================

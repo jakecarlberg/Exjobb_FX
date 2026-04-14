@@ -28,9 +28,10 @@ iCurPresentation = find(ismember(dm.cName, curPresentation));
 
 % =========================================================================
 % DATE RANGE (business days only)
+% Use dm date range so simulation always aligns with available market data
 % =========================================================================
-startDate = datenum(2005,1,1);   % Thesis Section 4.2.1: January 2005
-endDate   = datenum(2025,12,31); % Thesis Section 4.2.1: December 2025
+startDate = dm.dates(1);
+endDate   = dm.dates(end);
 
 dates = startDate:endDate;
 wd    = weekday(dates);
@@ -90,8 +91,9 @@ for j = 1:length(saleCurNames)
   saleCurIcur(j) = find(ismember(dm.cName, saleCurNames{j}));
 end
 
-% Assign a sales currency to each BOM order
-iSaleCurBOM = randsample(length(saleCurNames), nBOM, true, saleWeights);
+% Assign a sales currency to each BOM order (weighted draw, no toolbox required)
+cdf = cumsum(saleWeights);
+iSaleCurBOM = arrayfun(@(~) find(rand() <= cdf, 1, 'first'), 1:nBOM);
 
 % =========================================================================
 % GBM COMPONENT PRICES  (in procurement currency)

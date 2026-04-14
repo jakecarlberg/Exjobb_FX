@@ -50,6 +50,12 @@ elseif (testCase == 3)
   settings.startDate     = datenum(2005,1,1);  % Thesis Section 4.2.1: January 2005
   settings.endDate       = datenum(2025,12,31);% Thesis Section 4.2.1: December 2025
 
+  % Thesis currencies only (Table 4.5 + procurement + functional/presentation)
+  % Sales: USD AUD CAD GBP ZAR INR CNY
+  % Procurement: USD EUR CNY GBP
+  % Functional/Presentation: EUR SEK
+  settings.currencies = {'AUD','CAD','CNY','EUR','GBP','INR','SEK','USD','ZAR'};
+
   settings.usedItemNumbersOrg = [];
 %   settings.usedItemNumbersOrg = [1];
 

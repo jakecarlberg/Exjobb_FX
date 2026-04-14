@@ -27,6 +27,8 @@ settings.startDate          = datenum(2005,1,1);
 settings.endDate            = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
+% Thesis currencies only (Table 4.5 + procurement + functional/presentation)
+settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','INR','SEK','USD','ZAR'};
 
 marketDataSet = 'reutersZero';
 

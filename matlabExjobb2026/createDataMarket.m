@@ -25,16 +25,23 @@ if (strcmp(marketDataSet, 'reutersZero')) % Interest rates based on Reuters zero
 
   fileName = ['marketData\fx.xlsx'];
   d = readtable(fileName);
-  nc = size(d,2)-1+1; % Add USD
-  currencies = cell(nc,1);
   dates = datenum(d{:,1});
-  currencies{1} = 'USD';
+
+  % Read all currencies from file, then filter to settings.currencies if provided
+  allCurrencies = {'USD'};
   for i=2:size(d,2)
     str = char(d.Properties.VariableNames{i});
-    str = str(1:3);
-    currencies{i} = str;
+    allCurrencies{end+1} = str(1:3); %#ok<AGROW>
   end
-  currencies = sort(currencies);
+
+  if isfield(settings, 'currencies')
+    % Keep only the requested currencies (always include USD for cross-rate computation)
+    keepSet = union(settings.currencies, {'USD'});
+    allCurrencies = allCurrencies(ismember(allCurrencies, keepSet));
+  end
+
+  currencies = sort(allCurrencies(:));
+  nc = length(currencies);
   dm.cName = currencies;
   kUSD = find(ismember(dm.cName, 'USD'));
   cOrg = cell(nc,1);
