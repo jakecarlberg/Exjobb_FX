@@ -1,6 +1,6 @@
 dataFolder = 'epiroc2024';
 
-load([dataFolder '\BOM'], 'b');
+load(fullfile(dataFolder, 'BOM'), 'b');
 
 [productId,ia,ic] = unique(b.product);
 

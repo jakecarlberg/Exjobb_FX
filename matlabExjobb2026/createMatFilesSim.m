@@ -8,7 +8,7 @@ function createMatFilesSim(dm, seed, nBOM, verbose)
 %   nBOM    - number of BOM orders to generate (default 15)
 %   verbose - print summary to console (default true)
 %
-% The function writes all .mat files to simulatedData\ and is designed to
+% The function writes all .mat files to simulatedData/ and is designed to
 % be called repeatedly inside a Monte Carlo loop (runMC.m).
 
 if nargin < 2 || isempty(seed),    seed    = 1;    end
@@ -120,7 +120,7 @@ end
 
 c = table(ones(size(cCostingData,1),1), cCostingData(:,1), cCostingData(:,2), cCostingData(:,3), ...
   'VariableNames', {'facility','itemNumber','costingDate','CostingSum1'});
-save('simulatedData\costing', 'c');
+save(fullfile('simulatedData', 'costing'), 'c');
 
 % =========================================================================
 % TIMING PARAMETERS  (thesis Table 4.7)
@@ -407,17 +407,17 @@ productNumberDictionary = cellstr(num2str((1:nBOM)',        '%010.0f'));
 % =========================================================================
 % SAVE ALL FILES
 % =========================================================================
-save('simulatedData\costing',              'c');
-save('simulatedData\BOM',                  'b', 'productOrderDate');
-save('simulatedData\Sales',                'sa');
-save('simulatedData\AccountsReceivable',   'a');
-save('simulatedData\stockTransactions',    's');
-save('simulatedData\purchaseOrder',        'p');
-save('simulatedData\itemNumberDictionary', 'itemNumberDictionary', 'productNumberDictionary');
+save(fullfile('simulatedData', 'costing'),  'c');
+save(fullfile('simulatedData', 'BOM'),                  'b', 'productOrderDate');
+save(fullfile('simulatedData', 'Sales'),                'sa');
+save(fullfile('simulatedData', 'AccountsReceivable'),   'a');
+save(fullfile('simulatedData', 'stockTransactions'),    's');
+save(fullfile('simulatedData', 'purchaseOrder'),        'p');
+save(fullfile('simulatedData', 'itemNumberDictionary'), 'itemNumberDictionary', 'productNumberDictionary');
 
 ap = table(ap_invoiceNum, ap_txCode, ap_fxAmt, ap_cur, ap_dueDate, ap_accDate, ...
   'VariableNames', {'invoiceNumber','transactionCode','foreignCurrencyAmount','currency','dueDate','accountingDate'});
-save('simulatedData\AccountsPayable', 'ap');
+save(fullfile('simulatedData', 'AccountsPayable'), 'ap');
 
 if verbose
   fprintf('\n=== Multi-Currency Simulation Created (seed=%d) ===\n', seed);

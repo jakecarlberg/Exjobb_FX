@@ -8,7 +8,7 @@ else
   curFunctional = 'EUR';
 end
 
-load([dataFolder '\itemNumberDictionary'], 'itemNumberDictionary', 'productNumberDictionary');
+load(fullfile(dataFolder, 'itemNumberDictionary'), 'itemNumberDictionary', 'productNumberDictionary');
 
 
 if (isfield(settings, 'usedItemNumbersOrg'))
@@ -33,7 +33,7 @@ indAllDates = dm.indAllDates; % Quick mapping from date to index
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Procurement
 
-load([dataFolder '\purchaseOrder'], 'p');
+load(fullfile(dataFolder, 'purchaseOrder'), 'p');
 
 if (~exist('usedItemNumbers', 'var'))
   ind = false(size(p,1),1);
@@ -65,7 +65,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Costing
 
-load([dataFolder '\costing'], 'c');
+load(fullfile(dataFolder, 'costing'), 'c');
 
 if (~exist('usedItemNumbers', 'var'))
   ind = false(size(c,1),1);
@@ -90,7 +90,7 @@ c = c(ind,:);
 % fileNameStock = "epiroc2023\Stock transactions sample LIU.xlsx";
 % d = readtable(fileNameStock, "Sheet", "Sheet1");
 
-load([dataFolder '\stockTransactions'], 's');
+load(fullfile(dataFolder, 'stockTransactions'), 's');
 
 % d.orderNumber = str2double(d.orderNumber);
 
@@ -143,7 +143,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % BOM
 
-load([dataFolder '\BOM'], 'b', 'productOrderDate');
+load(fullfile(dataFolder, 'BOM'), 'b', 'productOrderDate');
 
 if (~isfield(settings, 'usedProductNumbers'))
   ind = false(size(b,1),1);
@@ -167,7 +167,7 @@ b = b(ind, :);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Sales
 
-load([dataFolder '\Sales'], 'sa');
+load(fullfile(dataFolder, 'Sales'), 'sa');
 
 sa.iCur = zeros(size(sa,1),1); % Index to currency
 
@@ -183,7 +183,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Accounts receivable
 
-load([dataFolder '\AccountsReceivable'], 'a');
+load(fullfile(dataFolder, 'AccountsReceivable'), 'a');
 
 a.iCur = zeros(size(a,1),1); % Index to currency
 
@@ -203,7 +203,7 @@ end
 %                       transactionCode 20 = AP settled (payment made)
 % Per thesis Eq. 4.39: PAP = -C * exp(-rs(tau)*tau) * e  (negative = obligation)
 
-load([dataFolder '\AccountsPayable'], 'ap');
+load(fullfile(dataFolder, 'AccountsPayable'), 'ap');
 
 ap.iCur = zeros(size(ap,1),1);
 

@@ -23,7 +23,7 @@ if (strcmp(marketDataSet, 'reutersZero')) % Interest rates based on Reuters zero
   % All other thesis currencies are quoted as USD/term (USDCAD, USDCNY, etc.).
   invertedCurrencies = {'AUD', 'EUR', 'GBP'};
 
-  fileName = ['marketData\fx.xlsx'];
+  fileName = fullfile('marketData', 'fx.xlsx');
   d = readtable(fileName);
   dates = datenum(d{:,1});
 
@@ -64,12 +64,12 @@ if (strcmp(marketDataSet, 'reutersZero')) % Interest rates based on Reuters zero
   end
 
   for i=1:nc
-    fileName = ['marketData\' char(currencies{i}) '100.mat'];
+    fileName = fullfile('marketData', [char(currencies{i}) '100.mat']);
     if isfile(fileName)
       d = load(fileName);
     else
       fprintf('Missing interest rate data for currency %s\n', currencies{i});
-      fileName = ['marketData\USD100.mat'];
+      fileName = fullfile('marketData', 'USD100.mat');
       d = load(fileName);
       d.fH = zeros(size(d.fH));
     end

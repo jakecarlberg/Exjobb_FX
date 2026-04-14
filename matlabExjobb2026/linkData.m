@@ -1,11 +1,11 @@
 dataFolder = 'epiroc2024';
 
-load([dataFolder '\itemNumberDictionary'], 'itemNumberDictionary', 'productNumberDictionary');
+load(fullfile(dataFolder, 'itemNumberDictionary'), 'itemNumberDictionary', 'productNumberDictionary');
 
-load([dataFolder '\purchaseOrder'], 'p');
-load([dataFolder '\stockTransactions'], 's');
-load([dataFolder '\BOM'], 'b');
-load([dataFolder '\costing'], 'c');
+load(fullfile(dataFolder, 'purchaseOrder'), 'p');
+load(fullfile(dataFolder, 'stockTransactions'), 's');
+load(fullfile(dataFolder, 'BOM'), 'b');
+load(fullfile(dataFolder, 'costing'), 'c');
 
 
 
