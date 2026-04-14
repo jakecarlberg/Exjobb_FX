@@ -18,8 +18,10 @@ hC = [dp.hC0 ; ones(M-1, Nc)*NaN];
 
 activeAssets = (sum(abs(hI),1)~=0)'; % Only study assets which have non-zero holding
 
-iCurPortfolio = find(ismember(dm.cName, 'SEK'));
-
+% PAM runs in EUR (functional currency). SEK is the presentation currency.
+iCurFunctional   = find(ismember(dm.cName, 'EUR'));
+iCurPresentation = find(ismember(dm.cName, 'SEK'));
+iCurPortfolio    = iCurFunctional;   % all decomposition terms in EUR
 
 % Compute currency holdings
 for k=1:Nc
@@ -64,23 +66,25 @@ end
 
 if doPlot, figure(1); plot(VC(:,5)); title('VC currency 5'); end
 
-V = zeros(M,1);
-for k=1:Nc
-  V = V + VC(:,k).*dm.fx{k, iCurPortfolio};
-end
-
-% Portfolio value in EUR (functional currency) - needed for FX benchmarks
-iCurFunctional = find(ismember(dm.cName, 'EUR'));
+% Portfolio value in EUR (functional currency) — PAM base currency
 V_EUR = zeros(M,1);
 for k=1:Nc
   V_EUR = V_EUR + VC(:,k).*dm.fx{k, iCurFunctional};
 end
 
-% Portfolio value in SEK with all FX rates frozen at day 1 (constant-currency basis)
+% Portfolio value in SEK (presentation currency) — translate EUR at daily EUR/SEK
+f_EUR_SEK = dm.fx{iCurFunctional, iCurPresentation};  % EUR/SEK rate [M x 1]
+V_SEK = V_EUR .* f_EUR_SEK;
+
+% Portfolio value in SEK with all FX rates frozen at day 1 (constant-currency)
+% Freeze both transaction->EUR and EUR->SEK rates at t=0
 V_SEK_const = zeros(M,1);
 for k=1:Nc
-  V_SEK_const = V_SEK_const + VC(:,k).*dm.fx{k, iCurPortfolio}(1);
+  V_SEK_const = V_SEK_const + VC(:,k).*dm.fx{k, iCurPresentation}(1);
 end
+
+% V is the main portfolio value used for decomposition check — in EUR
+V = V_EUR;
 
 
 epsP = dp.Pbar - dp.P;
@@ -272,27 +276,35 @@ dVhdepsf(2:end) = sum(hI(1:end-1,:).*depsf(2:end,:),2);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % PAM FX Benchmarks (thesis Eqs. 4.45-4.47)
+% All benchmarks expressed in SEK for comparison with Method 1 and Method 2.
 
-f_EUR_SEK = dm.fx{iCurFunctional, iCurPortfolio};  % EUR/SEK rate [M x 1]
-
-% Transactional FX (Eq. 4.45): dPf + dPc
+% Transactional FX (Eq. 4.45): in EUR (PAM runs in EUR)
 %   dPf = FX-rate sensitivity of instruments (FX columns of dVhdPxifMat)
 %   dPc = currency-price cross term (dVhdepsf)
+%   These capture transaction->EUR rate moves only (EUR is portfolio currency,
+%   so EUR/SEK does not appear as a risk factor here)
 iXifCols = 1:Nc^2;  % First Nc^2 xi columns are FX rate risk factors
-dFX_trans = [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
+dFX_trans_EUR = [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
 
-% Translation FX (Eq. 4.46): actual SEK change minus EUR change at EUR/SEK
-dFX_transl = [0; diff(V) - diff(V_EUR).*f_EUR_SEK(2:end)];
+% Translate transactional FX to SEK at daily EUR/SEK rate (Eq. 4.45 in SEK)
+dFX_trans = dFX_trans_EUR .* f_EUR_SEK;
 
-% Constant-currency FX (Eq. 4.47): frozen-FX SEK change minus EUR change at EUR/SEK
+% Translation FX (Eq. 4.46): SEK change minus EUR change translated at EUR/SEK
+% Isolates the EUR->SEK rate movement effect
+dFX_transl = [0; diff(V_SEK) - diff(V_EUR).*f_EUR_SEK(2:end)];
+
+% Constant-currency FX (Eq. 4.47): frozen-rate SEK change minus EUR change at EUR/SEK
+% Both transaction->EUR and EUR->SEK rates frozen at t=0
 dFX_cc = [0; diff(V_SEK_const) - diff(V_EUR).*f_EUR_SEK(2:end)];
 
 dr.xiName    = dc.xiName;
 dr.hI        = hI;
 dr.hC        = hC;
-dr.V         = V;
-dr.V_EUR     = V_EUR;
+dr.V         = V_SEK;        % presentation currency (SEK) for reporting
+dr.V_EUR     = V_EUR;        % functional currency (EUR) — PAM base
+dr.V_SEK     = V_SEK;
 dr.V_SEK_const = V_SEK_const;
+dr.dFX_trans_EUR = dFX_trans_EUR;
 dr.dVdI      = dVdI;
 dr.dVhRdf    = dVhRdf;
 dr.dVhDdf    = dVhDdf;
@@ -314,7 +326,8 @@ dr.FX_transl  = cumsum(dFX_transl);
 dr.FX_cc      = cumsum(dFX_cc);
 
 
-dV = diff(V);
+% Decomposition check: residual should be ~zero (all in EUR)
+dV = diff(V_EUR);
 dVd = dVdI + dVhRdf + dVhDdf + dVdC + dVhdPtf + dVhdPxif + dVhdPqf + dVhdepsaf + dVhdepsIf + dVhdepsPf + dVhPtotdf + dVhdepsf;
 dVd = dVd(2:end);
 
@@ -400,17 +413,21 @@ if doPlot
   title('Slippage terms');
 
   figure(5);
-  plot(dm.dates, V);
-  datetick('x', 'yyyy'); title('Portfolio value (SEK)');
+  plot(dm.dates, V_EUR);
+  datetick('x', 'yyyy'); title('Portfolio value (EUR, functional currency)');
+
+  figure(6);
+  plot(dm.dates, V_SEK);
+  datetick('x', 'yyyy'); title('Portfolio value (SEK, presentation currency)');
 
   for i=1:length(VallNames)
     fprintf('%40s %10.2f\n', VallNames{i}, Vall(end,i));
   end
 
   % -----------------------------------------------------------------------
-  % PAM FX Benchmarks (thesis Eqs. 4.45-4.47)
+  % PAM FX Benchmarks (thesis Eqs. 4.45-4.47) — all in SEK
   % -----------------------------------------------------------------------
-  figure(6);
+  figure(7);
   plot(dm.dates, [dr.FX_trans, dr.FX_transl, dr.FX_cc]);
   datetick('x', 'yyyy');
   legend({'Transactional FX (Eq.4.45)', 'Translation FX (Eq.4.46)', 'Constant-currency FX (Eq.4.47)'}, 'Location', 'Best');
