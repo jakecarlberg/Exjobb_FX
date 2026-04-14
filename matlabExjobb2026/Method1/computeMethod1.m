@@ -40,7 +40,7 @@ function [m1] = computeMethod1(dm, dc, periodDates)
 % =========================================================================
 % Period dates
 % =========================================================================
-addpath(fileparts(mfilename('fullpath')));   % ensure parent folder on path
+addpath(fullfile(fileparts(mfilename('fullpath')), '..'));  % parent folder for makeQuarterDates
 if nargin < 3 || isempty(periodDates)
   periodDates = makeQuarterDates(dm.dates(1), dm.dates(end));
 end

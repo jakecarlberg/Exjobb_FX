@@ -30,9 +30,10 @@ createMatFilesSim(dm, 1, 15, true);
 [dr] = performanceAttribution(dm, dc, dp);
 
 % -------------------------------------------------------------------------
-% Realized / unrealized FX gains on AR and AP (thesis Eqs. 4.13-4.17)
+% Realized / unrealized FX gains on AR and AP — Method 1 (thesis Eqs. 4.13-4.17)
 % -------------------------------------------------------------------------
-[fxg] = computeFXGains(dm, dc);
+addpath('Method1');
+[fxg] = computeMethod1(dm, dc);
 
 fprintf('\n=== FX Gains per Quarter (EUR functional currency) ===\n');
 fprintf('%-12s %12s %12s %12s %12s %12s\n', ...
