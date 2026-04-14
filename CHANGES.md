@@ -68,6 +68,29 @@
 
 ---
 
+## FX Reduction & Test Case Cleanup
+
+### `marketData/` (deleted files)
+- Removed 29 non-thesis market data files: all `*100.mat` and `*Z.xlsx` for CHF, CLP, CZK, DKK, HKD, JPY, KRW, MXN, NOK, PEN, PLN, RUB, SGD, THB
+- Filtered `fx.xlsx` from 25 currencies down to the 9 thesis currencies: AUD, CAD, CNY, EUR, GBP, INR, SEK, USD, ZAR
+- Removing THB (started 2020-11-02) extends the available date range back to 2019-01-02
+
+### `createDataMarket.m`
+- Added `settings.currencies` filter: only loads currencies in the provided set (always keeps USD for cross-rate computation)
+- Fixed duplicate `cName` entries by applying `unique()` when building the currency list
+
+### `runPA.m`
+- Removed test cases 0, 1, 2 (Epiroc real data); now a single clean simulation script
+- Added explicit `settings.currencies` for the 9 thesis currencies
+
+### `runMC.m`
+- Added `settings.currencies` for the 9 thesis currencies (consistent with `runPA.m`)
+
+### `buildPA.m`
+- Removed stray debug `fprintf` (Sales cost printout)
+
+---
+
 ## Method 1 (skeleton)
 
 ### `Method1/computeMethod1.m` (new file, new folder)

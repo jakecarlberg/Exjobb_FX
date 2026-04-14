@@ -1,15 +1,14 @@
 function [dm] = createDataMarket(marketDataSet, settings)
 % Create Data Market structure, dm, with interest rates and exchange rates for each currency
+%
+% Thesis currencies (Table 4.5 + procurement + functional/presentation):
+%   Sales:        AUD, CAD, CNY, GBP, INR, USD, ZAR
+%   Procurement:  CNY, EUR, GBP, USD
+%   Func/Pres:    EUR, SEK
+%   Full set:     AUD, CAD, CNY, EUR, GBP, INR, SEK, USD, ZAR
 
-% Currencies procurement: AUD, CAD, CHF, EUR, GBP, INR, JPY, NOK, SEK, ZAR
-% Currencies sales (additional): BGN, BWP, CLP, CNY, CZK, HKD, KRW, MXN, PEN, PLN, RUB, SGD, THB
-% Joint: AUD=;BGN=;BWP=;CAD=;CHF=;CLP=;CNY=;CZK=;EUR=;GBP=;HKD=;INR=;JPY=;KRW=;MXN=;NOK=;PEN=;PLN=;RUB=;SEK=;SGD=;THB=;ZAR=
-
-% startDate = datenum(1900,1,1); % Start as early as possible
-startDate = datenum(2020,9,14); % 
-endDate = datenum(2100,1,1); % End as late as possible
-% startDate = datenum(2023,4,5); 
-% endDate = datenum(2023,4,6); 
+startDate = datenum(2005,1,1);
+endDate   = datenum(2100,1,1);
 dm.dt = 1/365; % Use daily discretization in interest rate curves
 
 if (isfield(settings, 'startDate'))
@@ -20,8 +19,9 @@ if (isfield(settings, 'endDate'))
 end
 
 if (strcmp(marketDataSet, 'reutersZero')) % Interest rates based on Reuters zero-coupon curves
-%   currencies = {'AUD', 'BGN', 'BWP', 'CAD', 'CHF', 'CLP', 'CNY', 'CZK', 'EUR', 'GBP', 'HKD', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'PEN', 'PLN', 'RUB', 'SEK', 'SGD', 'THB', 'USD', 'ZAR'};
-  invertedCurrencies = {'AUD', 'BWP', 'EUR', 'FJD', 'FKP', 'GBP', 'GIP', 'NZD', 'PGK', 'SBD', 'SHP', 'TOP', 'WST', 'XAG', 'XAU', 'XPD', 'XPT'};
+  % AUD and GBP are quoted as base/USD (AUDUSD, GBPUSD); EUR as EURUSD.
+  % All other thesis currencies are quoted as USD/term (USDCAD, USDCNY, etc.).
+  invertedCurrencies = {'AUD', 'EUR', 'GBP'};
 
   fileName = ['marketData\fx.xlsx'];
   d = readtable(fileName);
@@ -40,7 +40,7 @@ if (strcmp(marketDataSet, 'reutersZero')) % Interest rates based on Reuters zero
     allCurrencies = allCurrencies(ismember(allCurrencies, keepSet));
   end
 
-  currencies = sort(allCurrencies(:));
+  currencies = unique(sort(allCurrencies(:)));
   nc = length(currencies);
   dm.cName = currencies;
   kUSD = find(ismember(dm.cName, 'USD'));

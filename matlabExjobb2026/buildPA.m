@@ -124,7 +124,6 @@ for k=1:length(dc.itemNumbers)
   jjS = [jjS ; ones(length(ii),1)*kk];
   xSv = [xSv ; xSk(ii)];
   sSv = [sSv ; Pbar(ii,kk) - PSale(ii)];
-fprintf('Sales cost %f - %f = %f\n', Pbar(ii,kk), PSale(ii), Pbar(ii,kk) - PSale(ii));
 
   % Shrinkage
   kk = dc.assets.indPriceShrinkage(k);
