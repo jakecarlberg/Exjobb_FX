@@ -23,7 +23,7 @@ if (~exist('dm', 'var'))
   [dm] = createDataMarket(marketDataSet, settings);
 end
 
-createMatFilesSim(dm, 1, 15, true);
+createMatFilesSim(dm, 1, true);
 
 [dc] = createDataCompany(dm, settings);
 [dp] = buildPA(dm, dc);

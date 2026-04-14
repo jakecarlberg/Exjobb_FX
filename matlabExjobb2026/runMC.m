@@ -11,14 +11,13 @@
 % quarterly PAM FX outcomes (not just a full-period total).
 %
 % Usage:
-%   runMC              % default K=100, nBOM=15
+%   runMC              % default K=100
 %   K = 500; runMC     % override before running
 
 % =========================================================================
 % SETTINGS
 % =========================================================================
 if ~exist('K',    'var'), K    = 100; end
-if ~exist('nBOM', 'var'), nBOM = 15;  end
 
 settings.dataFolder         = 'simulatedData';
 settings.bomPricing         = 'StochasticPrices';
@@ -66,12 +65,12 @@ mc.periodDates  = periodDates;
 % =========================================================================
 % MONTE CARLO LOOP
 % =========================================================================
-fprintf('Starting Monte Carlo: K=%d, nBOM=%d, nQuarters=%d\n\n', K, nBOM, nPeriods);
+fprintf('Starting Monte Carlo: K=%d, nQuarters=%d\n\n', K, nPeriods);
 tStart = tic;
 
 for k = 1:K
 
-  createMatFilesSim(dm, k, nBOM, false);
+  createMatFilesSim(dm, k, false);
 
   try
     dc = createDataCompany(dm, settings);
@@ -148,4 +147,4 @@ subplot(3,1,3);
 boxplot(mc.FX_cc(valid,:));     ylabel('SEK');
 title('Constant-currency FX per quarter (Eq.4.47)');
 
-sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d, nBOM=%d)', nValid, nBOM));
+sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d)', nValid));

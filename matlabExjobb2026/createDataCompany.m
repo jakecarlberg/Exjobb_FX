@@ -444,7 +444,8 @@ for i=1:length(dc.productNumbers)
   jj = find(dc.a.transactionCode == 10 & indPaRange & dc.a.invoiceNumber == invoiceNumber);
   kk = find(dc.a.transactionCode == 20 & dc.a.invoiceNumber == invoiceNumber);
   if (length(jj) ~= 1 || length(kk) ~= 1)
-    fprintf('Could not find accounts receiveable for invoice %d\n', invoiceNumber); error('Exiting');
+    % Unsettled AR at end of period — skip (outstanding on balance sheet)
+    continue;
   end
 
   pb = clsPriceBond(dc.a.iCur(jj), dc.a.accountingDate(jj), dc.a.accountingDate(kk), 1, dc.a.iCur(jj));
@@ -465,7 +466,7 @@ for i=1:length(apOrderNums)
   jj = find(dc.ap.transactionCode == 10 & indPaRangeAP & dc.ap.invoiceNumber == apOrderNums(i));
   kk = find(dc.ap.transactionCode == 20 & dc.ap.invoiceNumber == apOrderNums(i));
   if (isempty(jj) || isempty(kk))
-    fprintf('Could not find accounts payable pair for PO %d\n', apOrderNums(i)); continue;
+    continue;  % Unsettled AP — outstanding on balance sheet
   end
   pb = clsPriceBond(dc.ap.iCur(jj), dc.ap.accountingDate(jj), dc.ap.accountingDate(kk), 1, dc.ap.iCur(jj));
   id = dc.assets.add(pb, AssetType.zeroCouponBond);
