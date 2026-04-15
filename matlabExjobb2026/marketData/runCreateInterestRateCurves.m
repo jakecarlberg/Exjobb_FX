@@ -1,14 +1,10 @@
-% currencies = {'AUD', 'BGN', 'BWP', 'CAD', 'CHF', 'CLP', 'CNY', 'CZK', 'EUR', 'GBP', 'HKD', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'PEN', 'PLN', 'RUB', 'SEK', 'SGD', 'THB', 'USD', 'ZAR'};
-currencies = {'AUD', 'CAD', 'CHF', 'CLP', 'CNY', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'PLN', 'RUB', 'SEK', 'SGD', 'THB', 'USD', 'ZAR'};
-% BGN has no recent data
-% BWP, PEN has no data
-% CLP, INR has OIS data
+% Only the 9 currencies needed for the thesis simulation
+currencies = {'AUD', 'CAD', 'CNY', 'EUR', 'GBP', 'INR', 'SEK', 'USD', 'ZAR'};
 
-firstDate = datenum(2019,1,1);
+firstDate = datenum(2007,1,1);  % Change to 2005 when FX data is available
 p = 1e2;
 
-for i=5:5
-% for i=1:length(currencies)
+for i=1:length(currencies)
   currencyName = currencies(i);
   [dates, firstDates, lastDates, fH, ricAll, zH] = forwardRates(currencies(i), firstDate, p);
 %   forwardRates;

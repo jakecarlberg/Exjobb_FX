@@ -7,7 +7,7 @@ clear settings;
 settings.dataFolder    = 'simulatedData';
 settings.bomPricing    = 'StochasticPrices';
 settings.curFunctional = 'EUR';
-settings.startDate     = datenum(2005,1,1);
+settings.startDate     = datenum(2007,1,1);  % Change to 2005 when FX data is available
 settings.endDate       = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];

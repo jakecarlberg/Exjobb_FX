@@ -1,17 +1,18 @@
 function [dates, firstDates, lastDates, fH, ricAll, zH] = forwardRates(currencyName, firstDate, p)
 
-amplFolderPath = "Z:\MAI\ampl\";
-amplSetupFilename = strcat(amplFolderPath,"amplapi-win64\amplapi\matlab\setUp.m");
-amplPath = strcat(amplFolderPath, "ampl_mswin64");
-solverFile = strcat(amplPath, "\ipopt");
+% --- AMPL paths (update to match your installation) ----------------------
+amplFolderPath = fullfile(getenv('HOME'), 'Downloads', 'ampl_macos64');
+amplSetupFilename = fullfile(amplFolderPath, 'amplapi', 'matlab', 'setUp.m');
+amplPath = amplFolderPath;  % ampl binary is in the root folder on Mac
+solverFile = fullfile(amplPath, 'ipopt');
 
 if (~exist(amplSetupFilename,'file') || ~exist(amplPath, 'dir'))
-  error('It is necessary to follow the lab instructions to obtain ampl, then change the amplFolderPath to your own path. If another operating system than win64, the folder names in the code has to be changed.');
+  error('AMPL not found. Update amplFolderPath in forwardRates.m to your AMPL installation path.');
 end
 
-ipoptFilename = strcat(amplFolderPath, "ampl_mswin64\ipopt");
-if (~exist(ipoptFilename,'file') && ~exist(strcat(ipoptFilename,'.exe'),'file'))
-  error('It is necessary to follow the lab instructions and copy Ipopt to the correct folder.');
+ipoptFilename = fullfile(amplFolderPath, 'ipopt');
+if (~exist(ipoptFilename,'file'))
+  error('Ipopt solver not found. Place the ipopt binary in your AMPL folder.');
 end
 
 if (~exist('AMPL', 'file')) % Only initialize ampl once

@@ -28,10 +28,16 @@ curFunctional   = 'EUR';
 curPresentation = 'SEK';
 iCurFunctional  = find(ismember(dm.cName, curFunctional));
 
+% --- Simulation start year ------------------------------------------------
+% Change this to 2005 once FX/yield data is available back to Jan 2005.
+% All arrays below cover 2005-2025 (21 elements); the simulation slices
+% from simStartYear onward.
+simStartYear = 2007;  % <-- CHANGE TO 2005 WHEN DATA IS AVAILABLE
+
 % --- Revenue: start value and annual growth rates (Tables 4.3-4.4) -------
 %            2005  2006  2007  2008  2009  2010  2011  2012  2013  2014
 %            2015  2016  2017  2018  2019  2020  2021  2022  2023  2024  2025
-startRevenue    = 500e6;   % EUR, year 2005
+startRevenue    = 500e6;   % EUR, year 2005 (base year for compounding)
 revenueGrowthPct = [NaN, 18.2, 17.5,  4.2, -25.1, 10.8, 22.1, -3.5, -1.2,  0.8, ...
                    -8.6, -6.1, 12.0, 16.5,  -0.8,-13.2, 17.0, 31.1, 12.6, -2.9, -1.8];
 
@@ -43,7 +49,7 @@ grossMarginPct = [42.5, 43.1, 43.0, 41.8, 36.2, 39.5, 41.0, 40.1, 39.8, 39.5, ..
 inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 
 % --- Base selling prices per product type (EUR, year 2005) ---------------
-baseSellPriceEUR = [100000, 500000, 2000000];  % Type A, B, C (batch/lot level)
+baseSellPriceEUR = [1000000, 5000000, 20000000];  % Type A, B, C (batch/lot level)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -83,27 +89,42 @@ nTypes = length(typeComponents);
 %  COMPUTE YEAR-BY-YEAR TARGETS
 %% ========================================================================
 
-simYears = 2005:2025;
+allYears = 2005:2025;  % full range for arrays
+
+% Compute revenue for ALL years first (compounding from 2005 base)
+allRevenue = zeros(1, length(allYears));
+allRevenue(1) = startRevenue;
+for y = 2:length(allYears)
+  allRevenue(y) = allRevenue(y-1) * (1 + revenueGrowthPct(y)/100);
+end
+
+% Slice to simulation window
+iStart   = find(allYears == simStartYear);
+simYears = allYears(iStart:end);
 nYears   = length(simYears);
 
-% Revenue targets by compounding growth
-targetRevenue = zeros(1, nYears);
-targetRevenue(1) = startRevenue;
-for y = 2:nYears
-  targetRevenue(y) = targetRevenue(y-1) * (1 + revenueGrowthPct(y)/100);
-end
+% Slice all calibration arrays to match
+revenueGrowthPct = revenueGrowthPct(iStart:end);
+grossMarginPct   = grossMarginPct(iStart:end);
+inflationPct     = inflationPct(iStart:end);
+
+% Revenue targets (compounded from 2005 base, sliced to sim window)
+targetRevenue = allRevenue(iStart:end);
 
 % COGS targets
 targetCOGS = targetRevenue .* (1 - grossMarginPct/100);
 
-% Selling prices per type per year (inflation-adjusted)
-sellPriceByYear = zeros(nTypes, nYears);
+% Selling prices per type per year (inflation-adjusted from 2005 base)
+allInflation = 2.0 * ones(1, length(allYears));  % full 2005-2025 inflation
+allInflation(iStart:end) = inflationPct;          % overwrite with sliced values
+allSellPrice = zeros(nTypes, length(allYears));
 for t = 1:nTypes
-  sellPriceByYear(t, 1) = baseSellPriceEUR(t);
-  for y = 2:nYears
-    sellPriceByYear(t, y) = sellPriceByYear(t, y-1) * (1 + inflationPct(y)/100);
+  allSellPrice(t, 1) = baseSellPriceEUR(t);
+  for y = 2:length(allYears)
+    allSellPrice(t, y) = allSellPrice(t, y-1) * (1 + allInflation(y)/100);
   end
 end
+sellPriceByYear = allSellPrice(:, iStart:end);
 
 % Sales currency indices
 saleCurIcur = zeros(1, length(saleCurNames));
