@@ -1,5 +1,6 @@
 % Only the 9 currencies needed for the thesis simulation
-currencies = {'AUD', 'CAD', 'CNY', 'EUR', 'GBP', 'INR', 'SEK', 'USD', 'ZAR'};
+% AUD, CAD, CNY already regenerated 2026-04-17 (skipped here)
+currencies = {'EUR', 'GBP', 'INR', 'SEK', 'USD', 'ZAR'};
 
 firstDate = datenum(2007,1,1);  % Change to 2005 when FX data is available
 p = 1e2;

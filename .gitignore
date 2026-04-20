@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# MATLAB backup files
+*.asv
+*~
+
+# Office temp files
+~$*
+
+# Claude worktrees
+.claude/worktrees/
+
+# Misc
+read

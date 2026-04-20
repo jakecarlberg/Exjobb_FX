@@ -1,7 +1,7 @@
 function [dates, firstDates, lastDates, fH, ricAll, zH] = forwardRates(currencyName, firstDate, p)
 
 % --- AMPL paths (update to match your installation) ----------------------
-amplFolderPath = fullfile(getenv('HOME'), 'Downloads', 'ampl_macos64');
+amplFolderPath = '/Applications/AMPL';
 amplSetupFilename = fullfile(amplFolderPath, 'amplapi', 'matlab', 'setUp.m');
 amplPath = amplFolderPath;  % ampl binary is in the root folder on Mac
 solverFile = fullfile(amplPath, 'ipopt');
@@ -80,35 +80,42 @@ for k=1:K
   cb(1) = 0;
   cb(:) = 1;
 
-  ampl = AMPL(amplPath);
-  ampl.read('forwardRatesLS.mod')
-  ampl.getParameter('p').set(p);
-  ampl.getParameter('dt').set(dt);
+  try
+    ampl = AMPL(amplPath);
+    ampl.read('forwardRatesLS.mod')
+    ampl.getParameter('p').set(p);
+    ampl.getParameter('dt').set(dt);
 
-  ampl.getParameter('n').set(nF);
-  ampl.getParameter('m').set(length(T));
-  ampl.getParameter('M').setValues(M);
+    ampl.getParameter('n').set(nF);
+    ampl.getParameter('m').set(length(T));
+    ampl.getParameter('M').setValues(M);
 
-  ampl.getParameter('r').setValues(r);
-  ampl.getParameter('cb').setValues(cb(1:nF-1));
-  ampl.setOption('solver', solverFile)
-  ampl.solve();
-  
-  T0 = [0 ; T];
-  [xx,yy] = stairs(T0, [f ; f(end)]);
+    ampl.getParameter('r').setValues(r);
+    ampl.getParameter('cb').setValues(cb(1:nF-1));
+    ampl.setOption('solver', solverFile)
+    ampl.solve();
 
-  fS = ampl.getVariable('f').getValues().getColumnAsDoubles('f.val'); % Smooth forward rates
-  z = ampl.getVariable('z').getValues().getColumnAsDoubles('z.val'); % Price errors
-  midT = (T0(1:end-1)+T0(2:end))/2;
-  plot(xx,yy, (0:M(end)-1)*dt, fS, midT, fS(1+round(midT*1/dt))+z, '+'); % + indicates the direction that forward rates should be adjusted
-  title([char(currencyName) ' (p = ' sprintf('%.0e',p) '), ' datestr(dates(k))]);
-  
-  pause(.1); % Pause 0.1 second (to be able to view the curve)
-  fH(k,1:nF) = fS;
-  zH(k,ind) = z;
+    T0 = [0 ; T];
+    [xx,yy] = stairs(T0, [f ; f(end)]);
 
-  ampl.close();
-  clear ampl;
+    fS = ampl.getVariable('f').getValues().getColumnAsDoubles('f.val'); % Smooth forward rates
+    z = ampl.getVariable('z').getValues().getColumnAsDoubles('z.val'); % Price errors
+    midT = (T0(1:end-1)+T0(2:end))/2;
+    plot(xx,yy, (0:M(end)-1)*dt, fS, midT, fS(1+round(midT*1/dt))+z, '+'); % + indicates the direction that forward rates should be adjusted
+    title([char(currencyName) ' (p = ' sprintf('%.0e',p) '), ' datestr(dates(k))]);
+
+    pause(.1); % Pause 0.1 second (to be able to view the curve)
+    fH(k,1:nF) = fS;
+    zH(k,ind) = z;
+
+    ampl.close();
+    clear ampl;
+  catch ME
+    fprintf('%s: Skipping date %s - AMPL error: %s\n', char(currencyName), datestr(dates(k)), ME.message);
+    flgKeep(k) = false;
+    try, ampl.close(); catch, end
+    try, clear ampl; catch, end
+  end
 end
 
 dates = dates(flgKeep);
