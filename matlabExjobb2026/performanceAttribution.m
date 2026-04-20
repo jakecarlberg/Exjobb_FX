@@ -72,9 +72,13 @@ for k=1:Nc
   V_EUR = V_EUR + VC(:,k).*dm.fx{k, iCurFunctional};
 end
 
-% Portfolio value in SEK (presentation currency) — translate EUR at daily EUR/SEK
+% Second PAM run: portfolio currency = SEK (presentation currency), per thesis Eq. 4.46
+% Sum currency buckets directly in SEK (mirrors the EUR run above with iCurPresentation)
 f_EUR_SEK = dm.fx{iCurFunctional, iCurPresentation};  % EUR/SEK rate [M x 1]
-V_SEK = V_EUR .* f_EUR_SEK;
+V_SEK = zeros(M,1);
+for k=1:Nc
+  V_SEK = V_SEK + VC(:,k).*dm.fx{k, iCurPresentation};
+end
 
 % Portfolio value in SEK with all FX rates frozen at day 1 (constant-currency)
 % Freeze both transaction->EUR and EUR->SEK rates at t=0
@@ -289,8 +293,8 @@ dFX_trans_EUR = [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
 % Translate transactional FX to SEK at daily EUR/SEK rate (Eq. 4.45 in SEK)
 dFX_trans = dFX_trans_EUR .* f_EUR_SEK;
 
-% Translation FX (Eq. 4.46): SEK change minus EUR change translated at EUR/SEK
-% Isolates the EUR->SEK rate movement effect
+% Translation FX (Eq. 4.46): daily change from SEK run minus EUR run converted to SEK
+% V_SEK comes from the second PAM run (c_p = SEK), isolating EUR/SEK movements
 dFX_transl = [0; diff(V_SEK) - diff(V_EUR).*f_EUR_SEK(2:end)];
 
 % Constant-currency FX (Eq. 4.47): frozen-rate SEK change minus EUR change at EUR/SEK
