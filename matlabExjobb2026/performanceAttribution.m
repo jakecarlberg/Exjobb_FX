@@ -80,11 +80,31 @@ for k=1:Nc
   V_SEK = V_SEK + VC(:,k).*dm.fx{k, iCurPresentation};
 end
 
-% Portfolio value in SEK with all FX rates frozen at day 1 (constant-currency)
-% Freeze both transaction->EUR and EUR->SEK rates at t=0
+% Prior-year same-quarter average FX rates (rolling comparison rates for CC benchmark).
+% For each date i, f_comp{k}(i) = mean of dm.fx{k,SEK} over the same calendar quarter
+% in the prior year. This makes the frozen rate update every quarter rather than
+% being fixed at day 1.
+[yr_all, mo_all, ~] = datevec(dm.dates);
+quarter_all = ceil(mo_all / 3);
+
+f_comp = cell(Nc, 1);
+for k = 1:Nc
+  f_comp{k} = zeros(M, 1);
+  for i = 1:M
+    mask = (yr_all == yr_all(i)-1) & (quarter_all == quarter_all(i));
+    if any(mask)
+      f_comp{k}(i) = mean(dm.fx{k, iCurPresentation}(mask));
+    else
+      f_comp{k}(i) = dm.fx{k, iCurPresentation}(1);  % fallback: earliest available
+    end
+  end
+end
+f_EUR_SEK_comp = f_comp{iCurFunctional};  % prior-year quarter average EUR/SEK [M x 1]
+
+% Constant-currency portfolio value using rolling comparison rates
 V_SEK_const = zeros(M,1);
-for k=1:Nc
-  V_SEK_const = V_SEK_const + VC(:,k).*dm.fx{k, iCurPresentation}(1);
+for k = 1:Nc
+  V_SEK_const = V_SEK_const + VC(:,k) .* f_comp{k};
 end
 
 % V is the main portfolio value used for decomposition check — in EUR
@@ -298,8 +318,17 @@ dFX_trans = dFX_trans_EUR .* f_EUR_SEK;
 dFX_transl = [0; diff(V_SEK) - diff(V_EUR).*f_EUR_SEK(2:end)];
 
 % Constant-currency FX (Eq. 4.47): frozen-rate SEK change minus EUR change at EUR/SEK
-% Both transaction->EUR and EUR->SEK rates frozen at t=0
 dFX_cc = [0; diff(V_SEK_const) - diff(V_EUR).*f_EUR_SEK(2:end)];
+
+% Decompose CC into two sub-components using the rolling comparison rate:
+%   Translation CC: EUR P&L re-expressed at actual vs. comparison EUR/SEK
+%   Transaction CC: residual — non-EUR/SEK rates frozen at comparison values
+dV_EUR_vec      = [0; diff(V_EUR)];
+dV_SEK_const_vec = [0; diff(V_SEK_const)];
+dFX_transl_CC = dV_EUR_vec .* (f_EUR_SEK_comp - f_EUR_SEK);
+dFX_trans_CC  = dV_SEK_const_vec - dV_EUR_vec .* f_EUR_SEK_comp;
+dFX_cc_total  = dFX_trans_CC + dFX_transl_CC;
+
 
 dr.xiName    = dc.xiName;
 dr.hI        = hI;
@@ -322,13 +351,40 @@ dr.dVhdepsIf = dVhdepsIf;
 dr.dVhdepsPf = dVhdepsPf;
 dr.dVhPtotdf = dVhPtotdf;
 dr.dVhdepsf  = dVhdepsf;
-dr.dFX_trans  = dFX_trans;
-dr.dFX_transl = dFX_transl;
-dr.dFX_cc     = dFX_cc;
-dr.FX_trans   = cumsum(dFX_trans);
-dr.FX_transl  = cumsum(dFX_transl);
-dr.FX_cc      = cumsum(dFX_cc);
+dr.dFX_trans      = dFX_trans;
+dr.dFX_transl     = dFX_transl;
+dr.dFX_cc         = dFX_cc;
+dr.FX_trans       = cumsum(dFX_trans);
+dr.FX_transl      = cumsum(dFX_transl);
+dr.FX_cc          = cumsum(dFX_cc);
+dr.f_EUR_SEK_comp  = f_EUR_SEK_comp;
+dr.dFX_trans_CC   = dFX_trans_CC;
+dr.dFX_transl_CC  = dFX_transl_CC;
+dr.dFX_cc_total   = dFX_cc_total;
+dr.FX_trans_CC    = cumsum(dFX_trans_CC);
+dr.FX_transl_CC   = cumsum(dFX_transl_CC);
+dr.FX_cc_total    = cumsum(dFX_cc_total);
 
+% Independent CC sanity check: verify trans_CC + transl_CC matches
+% diff(V_SEK_const) - diff(V_EUR)*f_EUR_SEK_actual
+dFX_cc_independent = [0; diff(V_SEK_const) - diff(V_EUR) .* f_EUR_SEK(2:end)];
+assert(max(abs(dFX_cc_independent - dFX_cc_total)) < 1e-6, ...
+  'CC decomposition does not match independent total');
+
+% Quarterly aggregation of CC components (same periodDates logic as runMC.m)
+% Produces per-quarter totals for comparison against Method 1, 2, and 2b.
+periodDates = makeQuarterDates(dm.dates(1), dm.dates(end));
+nPeriods    = length(periodDates) - 1;
+dr.FX_trans_CC_quarterly  = zeros(nPeriods, 1);
+dr.FX_transl_CC_quarterly = zeros(nPeriods, 1);
+dr.FX_cc_total_quarterly  = zeros(nPeriods, 1);
+for p = 1:nPeriods
+  idx = find(dm.dates > periodDates(p) & dm.dates <= periodDates(p+1));
+  dr.FX_trans_CC_quarterly(p)  = sum(dFX_trans_CC(idx));
+  dr.FX_transl_CC_quarterly(p) = sum(dFX_transl_CC(idx));
+  dr.FX_cc_total_quarterly(p)  = sum(dFX_cc_total(idx));
+end
+dr.periodDates = periodDates;
 
 % Decomposition check: residual should be ~zero (all in EUR)
 dV = diff(V_EUR);
@@ -437,9 +493,19 @@ if doPlot
   legend({'Transactional FX (Eq.4.45)', 'Translation FX (Eq.4.46)', 'Constant-currency FX (Eq.4.47)'}, 'Location', 'Best');
   title('PAM FX Benchmarks (cumulative, SEK)');
 
+  figure(8);
+  plot(dm.dates, [dr.FX_trans_CC, dr.FX_transl_CC, dr.FX_cc_total]);
+  datetick('x', 'yyyy');
+  legend({'CC Transaction component', 'CC Translation component', 'CC Total (trans+transl)'}, 'Location', 'Best');
+  title('PAM CC Decomposition (cumulative, SEK)');
+
   fprintf('\n=== PAM FX Benchmarks (cumulative over full period, SEK) ===\n');
   fprintf('  Transactional FX     (Eq.4.45): %20s\n', fmtNum(dr.FX_trans(end), 2));
   fprintf('  Translation FX       (Eq.4.46): %20s\n', fmtNum(dr.FX_transl(end), 2));
   fprintf('  Constant-currency FX (Eq.4.47): %20s\n', fmtNum(dr.FX_cc(end), 2));
+  fprintf('\n=== PAM CC Decomposition (cumulative over full period, SEK) ===\n');
+  fprintf('  CC Transaction component:       %20s\n', fmtNum(dr.FX_trans_CC(end), 2));
+  fprintf('  CC Translation component:       %20s\n', fmtNum(dr.FX_transl_CC(end), 2));
+  fprintf('  CC Total (trans + transl):      %20s\n', fmtNum(dr.FX_cc_total(end), 2));
 
 end
