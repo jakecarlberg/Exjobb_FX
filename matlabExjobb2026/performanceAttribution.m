@@ -425,7 +425,7 @@ if doPlot
   datetick('x', 'yyyy'); title('Portfolio value (SEK, presentation currency)');
 
   for i=1:length(VallNames)
-    fprintf('%40s %10.2f\n', VallNames{i}, Vall(end,i));
+    fprintf('%40s %18s\n', VallNames{i}, fmtNum(Vall(end,i), 2));
   end
 
   % -----------------------------------------------------------------------
@@ -438,8 +438,8 @@ if doPlot
   title('PAM FX Benchmarks (cumulative, SEK)');
 
   fprintf('\n=== PAM FX Benchmarks (cumulative over full period, SEK) ===\n');
-  fprintf('  Transactional FX     (Eq.4.45): %12.2f\n', dr.FX_trans(end));
-  fprintf('  Translation FX       (Eq.4.46): %12.2f\n', dr.FX_transl(end));
-  fprintf('  Constant-currency FX (Eq.4.47): %12.2f\n', dr.FX_cc(end));
+  fprintf('  Transactional FX     (Eq.4.45): %20s\n', fmtNum(dr.FX_trans(end), 2));
+  fprintf('  Translation FX       (Eq.4.46): %20s\n', fmtNum(dr.FX_transl(end), 2));
+  fprintf('  Constant-currency FX (Eq.4.47): %20s\n', fmtNum(dr.FX_cc(end), 2));
 
 end

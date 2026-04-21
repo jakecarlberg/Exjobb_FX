@@ -32,7 +32,7 @@ iCurFunctional  = find(ismember(dm.cName, curFunctional));
 % Change this to 2005 once FX/yield data is available back to Jan 2005.
 % All arrays below cover 2005-2025 (21 elements); the simulation slices
 % from simStartYear onward.
-simStartYear = 2007;  % <-- CHANGE TO 2005 WHEN DATA IS AVAILABLE
+simStartYear = 2007;  % Data back to 2005 when FX/yield data is fully extended
 
 % --- Revenue: start value and annual growth rates (Tables 4.3-4.4) -------
 %            2005  2006  2007  2008  2009  2010  2011  2012  2013  2014
@@ -54,9 +54,10 @@ baseSellPriceEUR = [1000000, 5000000, 20000000];  % Type A, B, C (batch/lot leve
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
 
-% --- Sales currency exposure (Table 4.5) ---------------------------------
-saleCurNames   = {'USD','EUR','AUD','CAD','GBP','ZAR','INR','CNY'};
-saleExposurePct = [38,   22,   12,    7,    6,    5,    5,    5  ];
+% --- Sales currency exposure (Table 4.5; INR dropped due to limited yield data)
+% Weights will auto-normalize to 100% in the generation loop
+saleCurNames   = {'USD','EUR','AUD','CAD','GBP','ZAR','CNY'};
+saleExposurePct = [38,   22,   12,    7,    6,    5,    5  ];
 
 % --- Cash management -----------------------------------------------------
 cashRetentionFrac = 0.10;  % retain 10% of prior year COGS; sweep rest to parent

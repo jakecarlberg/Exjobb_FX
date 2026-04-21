@@ -238,7 +238,7 @@ for k=1:nc
       if (cOrg{k}.dates(ii+1) == dm.dates(i))
         ii = ii+1;
       else
-        fprintf('%s: Copying interest rate curve to date %s\n', dm.cName{k}, datestr(dm.dates(i)));
+        % fprintf('%s: Copying interest rate curve to date %s\n', dm.cName{k}, datestr(dm.dates(i)));
       end
     end
     dm.fH{k}(i,:) = cOrg{k}.fH(ii,1:nD);
@@ -257,7 +257,7 @@ for ki=1:nc
           if (fxOrg{ki,kj}.dates(ii+1) == dm.dates(i))
             ii = ii+1;
           else
-            fprintf('%s%s: Copying fx-rate to date %s\n', dm.cName{ki}, dm.cName{kj}, datestr(dm.dates(i)));
+            % fprintf('%s%s: Copying fx-rate to date %s\n', dm.cName{ki}, dm.cName{kj}, datestr(dm.dates(i)));
           end
         end
         dm.fx{ki,kj}(i) = fxOrg{ki,kj}.f(ii);

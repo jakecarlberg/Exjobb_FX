@@ -27,7 +27,8 @@ settings.endDate            = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
 % Thesis currencies only (Table 4.5 + procurement + functional/presentation)
-settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','INR','SEK','USD','ZAR'};
+% INR dropped due to limited yield curve history (starts Nov 2010)
+settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','SEK','USD','ZAR'};
 
 marketDataSet = 'reutersZero';
 
