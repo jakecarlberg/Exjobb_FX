@@ -101,10 +101,18 @@ for k = 1:Nc
 end
 f_EUR_SEK_comp = f_comp{iCurFunctional};  % prior-year quarter average EUR/SEK [M x 1]
 
-% Constant-currency portfolio value using rolling comparison rates
+% Third PAM run: frozen comparison rates for all currencies → total CC (Eq. 4.47)
 V_SEK_const = zeros(M,1);
 for k = 1:Nc
   V_SEK_const = V_SEK_const + VC(:,k) .* f_comp{k};
+end
+
+% Fourth PAM run: actual transaction rates, frozen EUR/SEK → Translation CC denominator.
+% Rate for currency k→SEK = actual k→EUR rate × frozen EUR/SEK comparison rate.
+% Mirrors Eq. 4.46 with f_EUR_SEK_comp substituted for actual EUR/SEK.
+V_SEK_transl_const = zeros(M,1);
+for k = 1:Nc
+  V_SEK_transl_const = V_SEK_transl_const + VC(:,k) .* (dm.fx{k, iCurFunctional} .* f_EUR_SEK_comp);
 end
 
 % V is the main portfolio value used for decomposition check — in EUR
@@ -320,14 +328,12 @@ dFX_transl = [0; diff(V_SEK) - diff(V_EUR).*f_EUR_SEK(2:end)];
 % Constant-currency FX (Eq. 4.47): frozen-rate SEK change minus EUR change at EUR/SEK
 dFX_cc = [0; diff(V_SEK_const) - diff(V_EUR).*f_EUR_SEK(2:end)];
 
-% Decompose CC into two sub-components using the rolling comparison rate:
-%   Translation CC: EUR P&L re-expressed at actual vs. comparison EUR/SEK
-%   Transaction CC: residual — non-EUR/SEK rates frozen at comparison values
-dV_EUR_vec      = [0; diff(V_EUR)];
-dV_SEK_const_vec = [0; diff(V_SEK_const)];
-dFX_transl_CC = dV_EUR_vec .* (f_EUR_SEK_comp - f_EUR_SEK);
-dFX_trans_CC  = dV_SEK_const_vec - dV_EUR_vec .* f_EUR_SEK_comp;
-dFX_cc_total  = dFX_trans_CC + dFX_transl_CC;
+% Decompose CC using the fourth PAM run (mirrors Eq. 4.46 / 4.47 structure):
+%   Translation CC: fourth run (actual transaction, frozen EUR/SEK) vs EUR run
+%   Transaction CC: residual = total CC minus translation CC
+dFX_cc_total  = dFX_cc;
+dFX_transl_CC = [0; diff(V_SEK_transl_const) - diff(V_EUR) .* f_EUR_SEK(2:end)];
+dFX_trans_CC  = dFX_cc_total - dFX_transl_CC;
 
 
 dr.xiName    = dc.xiName;
@@ -336,7 +342,8 @@ dr.hC        = hC;
 dr.V         = V_SEK;        % presentation currency (SEK) for reporting
 dr.V_EUR     = V_EUR;        % functional currency (EUR) — PAM base
 dr.V_SEK     = V_SEK;
-dr.V_SEK_const = V_SEK_const;
+dr.V_SEK_const        = V_SEK_const;
+dr.V_SEK_transl_const = V_SEK_transl_const;
 dr.dFX_trans_EUR = dFX_trans_EUR;
 dr.dVdI      = dVdI;
 dr.dVhRdf    = dVhRdf;
@@ -365,11 +372,9 @@ dr.FX_trans_CC    = cumsum(dFX_trans_CC);
 dr.FX_transl_CC   = cumsum(dFX_transl_CC);
 dr.FX_cc_total    = cumsum(dFX_cc_total);
 
-% Independent CC sanity check: verify trans_CC + transl_CC matches
-% diff(V_SEK_const) - diff(V_EUR)*f_EUR_SEK_actual
-dFX_cc_independent = [0; diff(V_SEK_const) - diff(V_EUR) .* f_EUR_SEK(2:end)];
-assert(max(abs(dFX_cc_independent - dFX_cc_total)) < 1e-6, ...
-  'CC decomposition does not match independent total');
+% Sanity check: trans_CC + transl_CC must equal total CC
+assert(max(abs(dFX_trans_CC + dFX_transl_CC - dFX_cc_total)) < 1e-6, ...
+  'CC decomposition does not sum to total');
 
 % Quarterly aggregation of CC components (same periodDates logic as runMC.m)
 % Produces per-quarter totals for comparison against Method 1, 2, and 2b.

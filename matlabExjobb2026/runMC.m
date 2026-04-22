@@ -57,9 +57,12 @@ end
 % =========================================================================
 % PRE-ALLOCATE RESULT ARRAYS  [K x nPeriods]
 % =========================================================================
-mc.FX_trans  = nan(K, nPeriods);   % Transactional FX per quarter (Eq. 4.45)
-mc.FX_transl = nan(K, nPeriods);   % Translation FX per quarter   (Eq. 4.46)
-mc.FX_cc     = nan(K, nPeriods);   % Constant-currency per quarter (Eq. 4.47)
+mc.FX_trans     = nan(K, nPeriods);   % Transactional FX per quarter (Eq. 4.45)
+mc.FX_transl    = nan(K, nPeriods);   % Translation FX per quarter   (Eq. 4.46)
+mc.FX_cc        = nan(K, nPeriods);   % Constant-currency per quarter (Eq. 4.47)
+mc.FX_trans_CC  = nan(K, nPeriods);   % CC transaction component
+mc.FX_transl_CC = nan(K, nPeriods);   % CC translation component
+mc.FX_cc_total  = nan(K, nPeriods);   % CC total (trans + transl)
 mc.seeds        = (1:K)';
 mc.periodDates  = periodDates;
 
@@ -87,6 +90,10 @@ for k = 1:K
         mc.FX_cc(k,     p) = sum(dr.dFX_cc(idx));
       end
     end
+    % CC decomposition components — already at quarterly resolution in dr
+    mc.FX_trans_CC(k,  :) = dr.FX_trans_CC_quarterly(:)';
+    mc.FX_transl_CC(k, :) = dr.FX_transl_CC_quarterly(:)';
+    mc.FX_cc_total(k,  :) = dr.FX_cc_total_quarterly(:)';
 
   catch ME
     fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
@@ -105,7 +112,7 @@ fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
 % =========================================================================
 % SUMMARY STATISTICS  (across iterations, per quarter)
 % =========================================================================
-valid = ~any(isnan(mc.FX_trans), 2);
+valid = ~any(isnan(mc.FX_trans), 2) & ~any(isnan(mc.FX_cc_total), 2);
 nValid = sum(valid);
 
 fprintf('\n=== PAM FX Benchmarks: mean per quarter across %d iterations (SEK) ===\n', nValid);
@@ -129,6 +136,52 @@ for f = 1:3
   fprintf('%-28s %12.0f %12.0f %12.0f %12.0f %12.0f\n', names{f}, ...
     mean(x), std(x), prctile(x,5), median(x), prctile(x,95));
 end
+
+% =========================================================================
+% ANNUAL SUMMARY  (Q1+Q2+Q3+Q4 per calendar year, mean over valid iterations)
+% =========================================================================
+qEndDates = periodDates(2:end);          % end-date of each quarter
+[qYears, ~, ~] = datevec(qEndDates);
+uniqueYears = unique(qYears);
+nYears      = length(uniqueYears);
+
+% For each year: sum the quarterly MC means within the year.
+% Equivalent to: mean over valid iters of (sum of quarters in year).
+TI_annual       = zeros(nYears, 1);
+OCI_annual      = zeros(nYears, 1);
+CCt_annual      = zeros(nYears, 1);
+CCtr_annual     = zeros(nYears, 1);
+CCtl_annual     = zeros(nYears, 1);
+
+for y = 1:nYears
+  qMask = (qYears == uniqueYears(y));
+  TI_annual(y)   = mean(sum(mc.FX_trans(valid,     qMask), 2));
+  OCI_annual(y)  = mean(sum(mc.FX_transl(valid,    qMask), 2));
+  CCt_annual(y)  = mean(sum(mc.FX_cc_total(valid,  qMask), 2));
+  CCtr_annual(y) = mean(sum(mc.FX_trans_CC(valid,  qMask), 2));
+  CCtl_annual(y) = mean(sum(mc.FX_transl_CC(valid, qMask), 2));
+end
+
+% Sanity check: CC_trans + CC_transl == CC_total (per year)
+for y = 1:nYears
+  err = abs(CCtr_annual(y) + CCtl_annual(y) - CCt_annual(y));
+  assert(err < 1e-6, 'CC annual decomposition mismatch for year %d (err=%.2e)', ...
+    uniqueYears(y), err);
+end
+
+fprintf('\n=== PAM — Annual Results (mean over %d iterations, SEK) ===\n', nValid);
+fprintf('%-6s %14s %14s %14s %14s %14s\n', ...
+  'Year', 'TI', 'OCI', 'CC_total', 'CC_trans', 'CC_transl');
+fprintf('%s\n', repmat('-', 1, 82));
+for y = 1:nYears
+  fprintf('%-6d %14.0f %14.0f %14.0f %14.0f %14.0f\n', ...
+    uniqueYears(y), TI_annual(y), OCI_annual(y), ...
+    CCt_annual(y), CCtr_annual(y), CCtl_annual(y));
+end
+fprintf('%s\n', repmat('-', 1, 82));
+fprintf('%-6s %14.0f %14.0f %14.0f %14.0f %14.0f\n', 'TOTAL', ...
+  sum(TI_annual), sum(OCI_annual), sum(CCt_annual), ...
+  sum(CCtr_annual), sum(CCtl_annual));
 
 % =========================================================================
 % PLOTS
