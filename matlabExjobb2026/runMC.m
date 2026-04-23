@@ -63,6 +63,9 @@ mc.FX_cc        = nan(K, nPeriods);   % Constant-currency per quarter (Eq. 4.47)
 mc.FX_trans_CC  = nan(K, nPeriods);   % CC transaction component
 mc.FX_transl_CC = nan(K, nPeriods);   % CC translation component
 mc.FX_cc_total  = nan(K, nPeriods);   % CC total (trans + transl)
+mc.FX_trans_CC_LY  = nan(K, nPeriods);   % CC transaction component — last year daily rates
+mc.FX_transl_CC_LY = nan(K, nPeriods);   % CC translation component — last year daily rates
+mc.FX_cc_LY_total  = nan(K, nPeriods);   % CC total — last year daily rates
 mc.seeds        = (1:K)';
 mc.periodDates  = periodDates;
 
@@ -94,6 +97,10 @@ for k = 1:K
     mc.FX_trans_CC(k,  :) = dr.FX_trans_CC_quarterly(:)';
     mc.FX_transl_CC(k, :) = dr.FX_transl_CC_quarterly(:)';
     mc.FX_cc_total(k,  :) = dr.FX_cc_total_quarterly(:)';
+    % PAM Constant Currency — Last Year Daily Rates
+    mc.FX_trans_CC_LY(k,  :) = dr.FX_trans_CC_LY_quarterly(:)';
+    mc.FX_transl_CC_LY(k, :) = dr.FX_transl_CC_LY_quarterly(:)';
+    mc.FX_cc_LY_total(k,  :) = dr.FX_cc_LY_total_quarterly(:)';
 
   catch ME
     fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
@@ -112,7 +119,7 @@ fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
 % =========================================================================
 % SUMMARY STATISTICS  (across iterations, per quarter)
 % =========================================================================
-valid = ~any(isnan(mc.FX_trans), 2) & ~any(isnan(mc.FX_cc_total), 2);
+valid = ~any(isnan(mc.FX_trans), 2) & ~any(isnan(mc.FX_cc_total), 2) & ~any(isnan(mc.FX_cc_LY_total), 2);
 nValid = sum(valid);
 
 fprintf('\n=== PAM FX Benchmarks: mean per quarter across %d iterations (SEK) ===\n', nValid);
@@ -152,21 +159,30 @@ OCI_annual      = zeros(nYears, 1);
 CCt_annual      = zeros(nYears, 1);
 CCtr_annual     = zeros(nYears, 1);
 CCtl_annual     = zeros(nYears, 1);
+CCt_LY_annual   = zeros(nYears, 1);
+CCtr_LY_annual  = zeros(nYears, 1);
+CCtl_LY_annual  = zeros(nYears, 1);
 
 for y = 1:nYears
   qMask = (qYears == uniqueYears(y));
-  TI_annual(y)   = mean(sum(mc.FX_trans(valid,     qMask), 2));
-  OCI_annual(y)  = mean(sum(mc.FX_transl(valid,    qMask), 2));
-  CCt_annual(y)  = mean(sum(mc.FX_cc_total(valid,  qMask), 2));
-  CCtr_annual(y) = mean(sum(mc.FX_trans_CC(valid,  qMask), 2));
-  CCtl_annual(y) = mean(sum(mc.FX_transl_CC(valid, qMask), 2));
+  TI_annual(y)      = mean(sum(mc.FX_trans(valid,        qMask), 2));
+  OCI_annual(y)     = mean(sum(mc.FX_transl(valid,       qMask), 2));
+  CCt_annual(y)     = mean(sum(mc.FX_cc_total(valid,     qMask), 2));
+  CCtr_annual(y)    = mean(sum(mc.FX_trans_CC(valid,     qMask), 2));
+  CCtl_annual(y)    = mean(sum(mc.FX_transl_CC(valid,    qMask), 2));
+  CCt_LY_annual(y)  = mean(sum(mc.FX_cc_LY_total(valid,  qMask), 2));
+  CCtr_LY_annual(y) = mean(sum(mc.FX_trans_CC_LY(valid,  qMask), 2));
+  CCtl_LY_annual(y) = mean(sum(mc.FX_transl_CC_LY(valid, qMask), 2));
 end
 
-% Sanity check: CC_trans + CC_transl == CC_total (per year)
+% Sanity check: CC_trans + CC_transl == CC_total (per year, both methods)
 for y = 1:nYears
   err = abs(CCtr_annual(y) + CCtl_annual(y) - CCt_annual(y));
   assert(err < 1e-6, 'CC annual decomposition mismatch for year %d (err=%.2e)', ...
     uniqueYears(y), err);
+  err_ly = abs(CCtr_LY_annual(y) + CCtl_LY_annual(y) - CCt_LY_annual(y));
+  assert(err_ly < 1e-6, 'CC LY annual decomposition mismatch for year %d (err=%.2e)', ...
+    uniqueYears(y), err_ly);
 end
 
 fprintf('\n=== PAM — Annual Results (mean over %d iterations, SEK) ===\n', nValid);
@@ -182,6 +198,17 @@ fprintf('%s\n', repmat('-', 1, 82));
 fprintf('%-6s %14.0f %14.0f %14.0f %14.0f %14.0f\n', 'TOTAL', ...
   sum(TI_annual), sum(OCI_annual), sum(CCt_annual), ...
   sum(CCtr_annual), sum(CCtl_annual));
+
+fprintf('\n=== PAM Constant Currency — Last Year Daily Rates (mean over %d iterations, SEK) ===\n', nValid);
+fprintf('%-6s %14s %14s %14s\n', 'Year', 'CC_total_LY', 'CC_trans_LY', 'CC_transl_LY');
+fprintf('%s\n', repmat('-', 1, 62));
+for y = 1:nYears
+  fprintf('%-6d %14.0f %14.0f %14.0f\n', ...
+    uniqueYears(y), CCt_LY_annual(y), CCtr_LY_annual(y), CCtl_LY_annual(y));
+end
+fprintf('%s\n', repmat('-', 1, 62));
+fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
+  sum(CCt_LY_annual), sum(CCtr_LY_annual), sum(CCtl_LY_annual));
 
 % =========================================================================
 % PLOTS

@@ -84,7 +84,7 @@ end
 % For each date i, f_comp{k}(i) = mean of dm.fx{k,SEK} over the same calendar quarter
 % in the prior year. This makes the frozen rate update every quarter rather than
 % being fixed at day 1.
-[yr_all, mo_all, ~] = datevec(dm.dates);
+[yr_all, mo_all, da_all] = datevec(dm.dates);
 quarter_all = ceil(mo_all / 3);
 
 f_comp = cell(Nc, 1);
@@ -113,6 +113,35 @@ end
 V_SEK_transl_const = zeros(M,1);
 for k = 1:Nc
   V_SEK_transl_const = V_SEK_transl_const + VC(:,k) .* (dm.fx{k, iCurFunctional} .* f_EUR_SEK_comp);
+end
+
+% -------------------------------------------------------------------------
+% PAM Constant Currency — Last Year Daily Rates
+% For each date t, look up the FX rate from the nearest available date
+% exactly one year prior (same calendar day, prior year).
+% -------------------------------------------------------------------------
+target_dns_ly = datenum(yr_all - 1, mo_all, da_all);  % prior-year same-date [M x 1]
+idx_ly = zeros(M, 1);
+for i = 1:M
+  [~, idx_ly(i)] = min(abs(dm.dates - target_dns_ly(i)));
+end
+
+f_ly = cell(Nc, 1);
+for k = 1:Nc
+  f_ly{k} = dm.fx{k, iCurPresentation}(idx_ly);
+end
+f_EUR_SEK_ly = f_ly{iCurFunctional};  % last-year daily EUR/SEK [M x 1]
+
+% Fifth PAM run: all currencies at last-year daily rates → CC total (LY)
+V_SEK_LY = zeros(M, 1);
+for k = 1:Nc
+  V_SEK_LY = V_SEK_LY + VC(:,k) .* f_ly{k};
+end
+
+% Sixth PAM run: actual transaction rates (k→EUR), last-year EUR/SEK → Translation LY denominator.
+V_SEK_transl_LY = zeros(M, 1);
+for k = 1:Nc
+  V_SEK_transl_LY = V_SEK_transl_LY + VC(:,k) .* (dm.fx{k, iCurFunctional} .* f_EUR_SEK_ly);
 end
 
 % V is the main portfolio value used for decomposition check — in EUR
@@ -335,6 +364,14 @@ dFX_cc_total  = dFX_cc;
 dFX_transl_CC = [0; diff(V_SEK_transl_const) - diff(V_EUR) .* f_EUR_SEK(2:end)];
 dFX_trans_CC  = dFX_cc_total - dFX_transl_CC;
 
+% PAM Constant Currency — Last Year Daily Rates decomposition:
+%   Total LY CC: fifth run (all LY rates) vs EUR run at actual EUR/SEK
+%   Translation LY CC: sixth run (actual trans, LY EUR/SEK) vs EUR run
+%   Transaction LY CC: residual
+dFX_cc_LY_total  = [0; diff(V_SEK_LY)       - diff(V_EUR) .* f_EUR_SEK(2:end)];
+dFX_transl_CC_LY = [0; diff(V_SEK_transl_LY) - diff(V_EUR) .* f_EUR_SEK(2:end)];
+dFX_trans_CC_LY  = dFX_cc_LY_total - dFX_transl_CC_LY;
+
 
 dr.xiName    = dc.xiName;
 dr.hI        = hI;
@@ -344,6 +381,8 @@ dr.V_EUR     = V_EUR;        % functional currency (EUR) — PAM base
 dr.V_SEK     = V_SEK;
 dr.V_SEK_const        = V_SEK_const;
 dr.V_SEK_transl_const = V_SEK_transl_const;
+dr.V_SEK_LY           = V_SEK_LY;
+dr.V_SEK_transl_LY    = V_SEK_transl_LY;
 dr.dFX_trans_EUR = dFX_trans_EUR;
 dr.dVdI      = dVdI;
 dr.dVhRdf    = dVhRdf;
@@ -371,10 +410,20 @@ dr.dFX_cc_total   = dFX_cc_total;
 dr.FX_trans_CC    = cumsum(dFX_trans_CC);
 dr.FX_transl_CC   = cumsum(dFX_transl_CC);
 dr.FX_cc_total    = cumsum(dFX_cc_total);
+dr.dFX_trans_CC_LY   = dFX_trans_CC_LY;
+dr.dFX_transl_CC_LY  = dFX_transl_CC_LY;
+dr.dFX_cc_LY_total   = dFX_cc_LY_total;
+dr.FX_trans_CC_LY    = cumsum(dFX_trans_CC_LY);
+dr.FX_transl_CC_LY   = cumsum(dFX_transl_CC_LY);
+dr.FX_cc_LY_total    = cumsum(dFX_cc_LY_total);
 
 % Sanity check: trans_CC + transl_CC must equal total CC
 assert(max(abs(dFX_trans_CC + dFX_transl_CC - dFX_cc_total)) < 1e-6, ...
   'CC decomposition does not sum to total');
+
+% Sanity check: LY trans_CC + LY transl_CC must equal LY total CC
+assert(max(abs(dFX_trans_CC_LY + dFX_transl_CC_LY - dFX_cc_LY_total)) < 1e-6, ...
+  'CC LY decomposition does not sum to total');
 
 % Quarterly aggregation of CC components (same periodDates logic as runMC.m)
 % Produces per-quarter totals for comparison against Method 1, 2, and 2b.
@@ -383,11 +432,17 @@ nPeriods    = length(periodDates) - 1;
 dr.FX_trans_CC_quarterly  = zeros(nPeriods, 1);
 dr.FX_transl_CC_quarterly = zeros(nPeriods, 1);
 dr.FX_cc_total_quarterly  = zeros(nPeriods, 1);
+dr.FX_trans_CC_LY_quarterly  = zeros(nPeriods, 1);
+dr.FX_transl_CC_LY_quarterly = zeros(nPeriods, 1);
+dr.FX_cc_LY_total_quarterly  = zeros(nPeriods, 1);
 for p = 1:nPeriods
   idx = find(dm.dates > periodDates(p) & dm.dates <= periodDates(p+1));
   dr.FX_trans_CC_quarterly(p)  = sum(dFX_trans_CC(idx));
   dr.FX_transl_CC_quarterly(p) = sum(dFX_transl_CC(idx));
   dr.FX_cc_total_quarterly(p)  = sum(dFX_cc_total(idx));
+  dr.FX_trans_CC_LY_quarterly(p)  = sum(dFX_trans_CC_LY(idx));
+  dr.FX_transl_CC_LY_quarterly(p) = sum(dFX_transl_CC_LY(idx));
+  dr.FX_cc_LY_total_quarterly(p)  = sum(dFX_cc_LY_total(idx));
 end
 dr.periodDates = periodDates;
 
@@ -502,15 +557,25 @@ if doPlot
   plot(dm.dates, [dr.FX_trans_CC, dr.FX_transl_CC, dr.FX_cc_total]);
   datetick('x', 'yyyy');
   legend({'CC Transaction component', 'CC Translation component', 'CC Total (trans+transl)'}, 'Location', 'Best');
-  title('PAM CC Decomposition (cumulative, SEK)');
+  title('PAM CC Decomposition — Quarterly Avg Rates (cumulative, SEK)');
+
+  figure(9);
+  plot(dm.dates, [dr.FX_trans_CC_LY, dr.FX_transl_CC_LY, dr.FX_cc_LY_total]);
+  datetick('x', 'yyyy');
+  legend({'CC Transaction component (LY)', 'CC Translation component (LY)', 'CC Total (LY)'}, 'Location', 'Best');
+  title('PAM Constant Currency — Last Year Daily Rates (cumulative, SEK)');
 
   fprintf('\n=== PAM FX Benchmarks (cumulative over full period, SEK) ===\n');
   fprintf('  Transactional FX     (Eq.4.45): %20s\n', fmtNum(dr.FX_trans(end), 2));
   fprintf('  Translation FX       (Eq.4.46): %20s\n', fmtNum(dr.FX_transl(end), 2));
   fprintf('  Constant-currency FX (Eq.4.47): %20s\n', fmtNum(dr.FX_cc(end), 2));
-  fprintf('\n=== PAM CC Decomposition (cumulative over full period, SEK) ===\n');
+  fprintf('\n=== PAM CC Decomposition — Quarterly Avg Rates (cumulative, SEK) ===\n');
   fprintf('  CC Transaction component:       %20s\n', fmtNum(dr.FX_trans_CC(end), 2));
   fprintf('  CC Translation component:       %20s\n', fmtNum(dr.FX_transl_CC(end), 2));
   fprintf('  CC Total (trans + transl):      %20s\n', fmtNum(dr.FX_cc_total(end), 2));
+  fprintf('\n=== PAM Constant Currency — Last Year Daily Rates (cumulative, SEK) ===\n');
+  fprintf('  CC Transaction component (LY):  %20s\n', fmtNum(dr.FX_trans_CC_LY(end), 2));
+  fprintf('  CC Translation component (LY):  %20s\n', fmtNum(dr.FX_transl_CC_LY(end), 2));
+  fprintf('  CC Total (LY):                  %20s\n', fmtNum(dr.FX_cc_LY_total(end), 2));
 
 end
