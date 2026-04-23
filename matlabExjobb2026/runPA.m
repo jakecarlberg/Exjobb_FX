@@ -31,25 +31,25 @@ createMatFilesSim(dm, 1, true);
 [dr] = performanceAttribution(dm, dc, dp);
 
 % -------------------------------------------------------------------------
-% Realized / unrealized FX gains on AR and AP — Method 1 (thesis Eqs. 4.13-4.17)
+% Method 1 — Industry accounting method with daily (actual) exchange rate
+%  Produces Transactional Impact (eq 4.21) and Translation Impact / OCI
+%  (eqs 4.22-4.25) per quarter.
 % -------------------------------------------------------------------------
-addpath('Method1');
-[fxg] = computeMethod1(dm, dc);
+addpath(fullfile('IndustryMethods','Method1'));
+addpath('IndustryMethods');
+m1 = computeMethod1(dm, dc);
 
-fprintf('\n=== FX Gains per Quarter (EUR functional currency) ===\n');
-fprintf('%-12s %14s %14s %14s %14s %14s\n', ...
-  'Period end', 'AR real', 'AR unreal', 'AP real', 'AP unreal', 'Total');
-fprintf('%s\n', repmat('-',1,86));
-for p = 1:length(fxg.periodDates)-1
-  if fxg.AR_total(p)==0 && fxg.AP_total(p)==0, continue; end
-  fprintf('%-12s %14s %14s %14s %14s %14s\n', ...
-    datestr(fxg.periodDates(p+1),'yyyy-mm-dd'), ...
-    fmtNum(fxg.AR_real(p)), fmtNum(fxg.AR_unreal(p)), ...
-    fmtNum(fxg.AP_real(p)), fmtNum(fxg.AP_unreal(p)), fmtNum(fxg.total(p)));
+fprintf('\n=== Method 1: FX Impacts per Quarter (SEK, presentation currency) ===\n');
+fprintf('%-12s %16s %16s %16s\n', 'Period end', 'TI (Eq. 4.21)', 'OCI (Eq. 4.25)', 'Total');
+fprintf('%s\n', repmat('-', 1, 64));
+for p = 1:length(m1.periodEndDates)
+  if m1.TI(p) == 0 && m1.OCI(p) == 0, continue; end
+  fprintf('%-12s %16s %16s %16s\n', ...
+    datestr(m1.periodEndDates(p), 'yyyy-mm-dd'), ...
+    fmtNum(m1.TI(p)), fmtNum(m1.OCI(p)), fmtNum(m1.TI(p) + m1.OCI(p)));
 end
-fprintf('%s\n', repmat('-',1,86));
-fprintf('%-12s %14s %14s %14s %14s %14s\n', 'TOTAL', ...
-  fmtNum(sum(fxg.AR_real)), fmtNum(sum(fxg.AR_unreal)), ...
-  fmtNum(sum(fxg.AP_real)), fmtNum(sum(fxg.AP_unreal)), fmtNum(sum(fxg.total)));
+fprintf('%s\n', repmat('-', 1, 64));
+fprintf('%-12s %16s %16s %16s\n', 'TOTAL', ...
+  fmtNum(sum(m1.TI)), fmtNum(sum(m1.OCI)), fmtNum(sum(m1.TI) + sum(m1.OCI)));
 
 fprintf('\nFinal portfolio value (SEK): %s\n', fmtNum(dr.V(end), 4));

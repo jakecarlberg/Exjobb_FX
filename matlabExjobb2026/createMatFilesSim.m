@@ -49,7 +49,10 @@ grossMarginPct = [42.5, 43.1, 43.0, 41.8, 36.2, 39.5, 41.0, 40.1, 39.8, 39.5, ..
 inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 
 % --- Base selling prices per product type (EUR, year 2005) ---------------
-baseSellPriceEUR = [1000000, 5000000, 20000000];  % Type A, B, C (batch/lot level)
+% Normal mode:  ~100-170 orders/year  (realistic volume, slow if reused for MC)
+% Test mode:    ~5-10 orders/year     (for manual Method 1 verification)
+baseSellPriceEUR = [1000000, 5000000, 20000000];        % NORMAL MODE
+% baseSellPriceEUR = [50000000, 250000000, 1000000000]; % TEST MODE (×50 priser → ~10 orders/år)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -284,6 +287,7 @@ summDividend    = zeros(1, nYears);
 summCash        = zeros(1, nYears);
 summTypeCounts  = zeros(nYears, nTypes);           % product split per year
 summCurRevenue  = zeros(nYears, length(saleCurNames)); % revenue per currency per year
+dividendEvents  = zeros(0, 2);                     % [date, amount_EUR] per sweep
 
 for y = 1:nYears
 
@@ -511,6 +515,13 @@ for y = 1:nYears
   dividend = max(0, cashBalance - retainedCash);
   cashBalance = cashBalance - dividend;
 
+  % Record dividend event (date = last business day of the year, for
+  % downstream balance sheet tracking in the industry methods)
+  if dividend > 0
+    divDate = allDates(iYearEnd);
+    dividendEvents(end+1, :) = [divDate, dividend]; %#ok<AGROW>
+  end
+
   % --- Store summary -----------------------------------------------------
   summActRevenue(y)  = actRevenueY;
   summActCOGS(y)     = actCOGSY;
@@ -620,6 +631,9 @@ save(fullfile('simulatedData', 'itemNumberDictionary'), 'itemNumberDictionary', 
 ap = table(ap_invoiceNum, ap_txCode, ap_fxAmt, ap_cur, ap_dueDate, ap_accDate, ...
   'VariableNames', {'invoiceNumber','transactionCode','foreignCurrencyAmount','currency','dueDate','accountingDate'});
 save(fullfile('simulatedData', 'AccountsPayable'), 'ap');
+
+% Dividend events for industry-method balance sheet tracking (cash sweeps to parent)
+save(fullfile('simulatedData', 'dividendEvents'), 'dividendEvents');
 
 %% ========================================================================
 %  VERBOSE YEAR-BY-YEAR SUMMARY
