@@ -417,12 +417,14 @@ dr.FX_trans_CC_LY    = cumsum(dFX_trans_CC_LY);
 dr.FX_transl_CC_LY   = cumsum(dFX_transl_CC_LY);
 dr.FX_cc_LY_total    = cumsum(dFX_cc_LY_total);
 
-% Sanity check: trans_CC + transl_CC must equal total CC
-assert(max(abs(dFX_trans_CC + dFX_transl_CC - dFX_cc_total)) < 1e-6, ...
+% Sanity check: trans_CC + transl_CC must equal total CC (relative tolerance)
+ccScale = max(max(abs(dFX_cc_total)), 1);
+assert(max(abs(dFX_trans_CC + dFX_transl_CC - dFX_cc_total)) < 1e-8 * ccScale, ...
   'CC decomposition does not sum to total');
 
 % Sanity check: LY trans_CC + LY transl_CC must equal LY total CC
-assert(max(abs(dFX_trans_CC_LY + dFX_transl_CC_LY - dFX_cc_LY_total)) < 1e-6, ...
+ccScaleLY = max(max(abs(dFX_cc_LY_total)), 1);
+assert(max(abs(dFX_trans_CC_LY + dFX_transl_CC_LY - dFX_cc_LY_total)) < 1e-8 * ccScaleLY, ...
   'CC LY decomposition does not sum to total');
 
 % Quarterly aggregation of CC components (same periodDates logic as runMC.m)

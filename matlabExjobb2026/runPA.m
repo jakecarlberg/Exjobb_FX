@@ -52,4 +52,46 @@ fprintf('%s\n', repmat('-', 1, 64));
 fprintf('%-12s %16s %16s %16s\n', 'TOTAL', ...
   fmtNum(sum(m1.TI)), fmtNum(sum(m1.OCI)), fmtNum(sum(m1.TI) + sum(m1.OCI)));
 
+% -------------------------------------------------------------------------
+% Method 2 — Industry accounting method with sub-period average rates
+%  Three variants: weekly, monthly, quarterly averaging windows.
+%  Same shared core (EUR P&L + balance sheet) as Method 1; only the
+%  translation step differs (daily rate → sub-period avg rate).
+% -------------------------------------------------------------------------
+addpath(fullfile('IndustryMethods','Method2'));
+m2 = computeMethod2(dm, dc);
+
+fprintf('\n=== Method 2: FX Impacts per Quarter (SEK) — all 3 averaging windows ===\n');
+fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', 'Period end', ...
+  'TI (weekly)', 'OCI (weekly)', 'TI (monthly)', 'OCI (monthly)', ...
+  'TI (quarterly)', 'OCI (quarterly)');
+fprintf('%s\n', repmat('-', 1, 102));
+for p = 1:length(m2.periodEndDates)
+  haveAny = m2.weekly.TI(p) ~= 0 || m2.weekly.OCI(p) ~= 0 || ...
+            m2.monthly.TI(p) ~= 0 || m2.monthly.OCI(p) ~= 0 || ...
+            m2.quarterly.TI(p) ~= 0 || m2.quarterly.OCI(p) ~= 0;
+  if ~haveAny, continue; end
+  fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', ...
+    datestr(m2.periodEndDates(p), 'yyyy-mm-dd'), ...
+    fmtNum(m2.weekly.TI(p)),    fmtNum(m2.weekly.OCI(p)), ...
+    fmtNum(m2.monthly.TI(p)),   fmtNum(m2.monthly.OCI(p)), ...
+    fmtNum(m2.quarterly.TI(p)), fmtNum(m2.quarterly.OCI(p)));
+end
+fprintf('%s\n', repmat('-', 1, 102));
+fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', 'TOTAL', ...
+  fmtNum(sum(m2.weekly.TI)),    fmtNum(sum(m2.weekly.OCI)), ...
+  fmtNum(sum(m2.monthly.TI)),   fmtNum(sum(m2.monthly.OCI)), ...
+  fmtNum(sum(m2.quarterly.TI)), fmtNum(sum(m2.quarterly.OCI)));
+
+% -------------------------------------------------------------------------
+% Cross-method comparison (cumulative totals)
+% -------------------------------------------------------------------------
+fprintf('\n=== Cross-method comparison (cumulative SEK) ===\n');
+fprintf('%-20s %18s %18s\n', 'Method', 'TI', 'OCI');
+fprintf('%s\n', repmat('-', 1, 58));
+fprintf('%-20s %18s %18s\n', 'Method 1 (daily)',       fmtNum(sum(m1.TI)),            fmtNum(sum(m1.OCI)));
+fprintf('%-20s %18s %18s\n', 'Method 2 weekly',        fmtNum(sum(m2.weekly.TI)),     fmtNum(sum(m2.weekly.OCI)));
+fprintf('%-20s %18s %18s\n', 'Method 2 monthly',       fmtNum(sum(m2.monthly.TI)),    fmtNum(sum(m2.monthly.OCI)));
+fprintf('%-20s %18s %18s\n', 'Method 2 quarterly',     fmtNum(sum(m2.quarterly.TI)),  fmtNum(sum(m2.quarterly.OCI)));
+
 fprintf('\nFinal portfolio value (SEK): %s\n', fmtNum(dr.V(end), 4));

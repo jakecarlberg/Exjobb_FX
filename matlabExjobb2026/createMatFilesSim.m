@@ -50,9 +50,10 @@ inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 
 % --- Base selling prices per product type (EUR, year 2005) ---------------
 % Normal mode:  ~100-170 orders/year  (realistic volume, slow if reused for MC)
-% Test mode:    ~5-10 orders/year     (for manual Method 1 verification)
-baseSellPriceEUR = [1000000, 5000000, 20000000];        % NORMAL MODE
-% baseSellPriceEUR = [50000000, 250000000, 1000000000]; % TEST MODE (×50 priser → ~10 orders/år)
+% Test mode:    ~20-30 orders/year    (for manual verification — alpha-calibration
+%                                      still works, but transactions are tractable)
+% baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
+baseSellPriceEUR = [5000000, 25000000, 100000000];      % TEST MODE (×5 priser → ~20 orders/år)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -319,14 +320,27 @@ for y = 1:nYears
   curAssignment = curAssignment(randperm(nOrdersY));
 
   % --- Manufacturing start dates: uniform random within year -------------
+  % Buffers only apply to edge years:
+  %   - First year: procurement must not predate dm.dates(1)
+  %   - Last year:  customer payment must not exceed dm.dates(end)
+  % Middle years can use the full year range because procurement/payment
+  % that spills into adjacent years is fine (dm.dates covers them).
   bufferStart = procLeadMean + 3*procLeadStd + mfgMean + 3*mfgStd + 10;
   bufferEnd   = custPayMean  + 3*custPayStd  + 10;
 
   iYearStart = yearStartIdx(y);
   iYearEnd   = yearEndIdx(y);
 
-  iValidStart = iYearStart + round(bufferStart / 1.4);  % ~business days
-  iValidEnd   = iYearEnd   - round(bufferEnd   / 1.4);
+  if y == 1
+    iValidStart = iYearStart + round(bufferStart / 1.4);
+  else
+    iValidStart = iYearStart;
+  end
+  if y == nYears
+    iValidEnd = iYearEnd - round(bufferEnd / 1.4);
+  else
+    iValidEnd = iYearEnd;
+  end
 
   if iValidStart > iValidEnd
     % Narrow year — use full year range (some payments may spill over)
