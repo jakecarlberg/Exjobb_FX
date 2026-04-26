@@ -68,6 +68,28 @@ classdef clsPriceBomXi < handle
         end
       end
 
+      function [g_i, H_i] = priceRowGH(pb, dm, dc, i)
+        N = size(dc.xi, 2);
+        gi=[]; gVal=[]; Hi=[]; Hj=[]; HVal=[];
+        lDate = min([max(pb.KDates) dm.dates(end)]);
+        fDate = max([pb.firstDate dm.dates(1)]);
+        if dm.dates(i) >= fDate && dm.dates(i) <= lDate
+          ind = find(pb.KDates > dm.dates(i));
+          for j = 1:length(ind)
+            jj = ind(j);
+            indp = dc.xiP2xiInd(pb.iXip(jj));
+            indf = dc.xif2xiInd(pb.iCurXi(jj), pb.iCurBOM);
+            gi = [gi; indf; indp];
+            gVal = [gVal; pb.nItems(jj)*dc.xi(i,indp); dc.xi(i,indf)*pb.nItems(jj)];
+            Hi = [Hi; indf; indp]; Hj = [Hj; indp; indf]; HVal = [HVal; pb.nItems(jj); pb.nItems(jj)];
+          end
+        end
+        if isempty(gi), g_i = sparse(N,1);
+        else,           g_i = sparse(gi, ones(size(gi)), gVal, N, 1); end
+        if isempty(Hi), H_i = sparse(N,N);
+        else,           H_i = sparse(Hi, Hj, HVal, N, N); end
+      end
+
       function [D] = dividends(pb, dm, dc)
         Nc = length(dm.cName);
         indCF = ((pb.KDates >= dm.dates(1)) & (pb.KDates <= dm.dates(end)));

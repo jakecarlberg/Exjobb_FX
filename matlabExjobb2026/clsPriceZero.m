@@ -18,6 +18,12 @@ classdef clsPriceZero < handle
         H = cell(M,1);        
       end
 
+      function [g_i, H_i] = priceRowGH(obj, dm, dc, i)
+        N = size(dc.xi, 2);
+        g_i = sparse(N, 1);
+        H_i = sparse(N, N);
+      end
+
       function [D] = dividends(obj, dm, dc)
         Nc = length(dm.cName);
         D = cell(Nc, 1);

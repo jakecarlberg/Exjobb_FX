@@ -153,32 +153,16 @@ depsP = [zeros(1,N) ; epsP(2:end,:)-epsP(1:end-1,:)];
 
 dmPrev = dm; dcPrev = dc;
 [dmPrev, dcPrev] = xi2structure(dmPrev, dcPrev, 2);
-[PPrev, g, H] = dc.assets.price(dmPrev, dcPrev, activeAssets);
+% Prices only (no g/H) — avoids storing [M×N] cell arrays in memory
+[PPrev] = dc.assets.price(dmPrev, dcPrev, activeAssets);
 
 dmSignificant = dm; dcSignificant = dc;
 [dmSignificant, dcSignificant] = xi2structure(dmSignificant, dcSignificant, 3);
 [PSignificant] = dc.assets.price(dmSignificant, dcSignificant, activeAssets);
-% save debugPs PSignificant;
+clear dmSignificant dcSignificant;
 
 depsI = dp.P - PSignificant;
-
-% i = 666;
-% k = 5; % Currency
-% fOrg1 = dm.fH{k}(i,:);
-% fOrg2 = diff(-log(dm.d{k}(i,:)))/dm.dt;
-% figure(1);
-% plot([fOrg1 ; fOrg2]');
-% 
-% fPrev1 = dm.fH{k}(i-1,:);
-% fPrev2 = diff(-log(dmPrev.d{k}(i,:)))/dm.dt;
-% figure(2);
-% plot([fPrev1 ; fPrev2]');
-% 
-% fSignificant = diff(-log(dmSignificant.d{k}(i,:)))/dm.dt;
-% figure(3);
-% x = 1:length(fOrg1);
-% plot(x, fPrev1, 'b--', x, fOrg1, 'b', x, fSignificant, 'y');
-
+clear PSignificant;
 
 PPrevTot = [ones(size(dp.P(1,:)))*NaN ; dp.P(1:end-1,:)];
 for k=1:Nc
@@ -188,37 +172,55 @@ for k=1:Nc
   end
 end
 dPt = PPrev - PPrevTot;
+clear PPrev;
 
-dPxi = g;
-dPq = H;
+% Per-date gradient/Hessian streaming — avoids [M×N] g/H cell arrays
 dPa = dPt;
-for i=1:M
-  if (i==1)
-    dxi = zeros(size(dc.xi(i,:)));
+N_xi = size(dc.xi, 2);
+iiAll_xi = []; jjAll_xi = []; vAll_xi = [];
+dVhdPqf = zeros(M, 1);
+
+for i = 1:M
+  if i == 1
+    dxi = zeros(1, N_xi);
   else
     dxi = dc.xi(i,:) - dc.xi(i-1,:);
   end
-  for j=1:N
-    if (~activeAssets(j))
-      continue;
+  [g_i, H_i] = dc.assets.priceRowGH(dmPrev, dcPrev, i, activeAssets);
+  for j = 1:N
+    if ~activeAssets(j), continue; end
+    gij = g_i{j};
+    if ~isempty(gij) && nnz(gij) > 0
+      [ri, ~, vi] = find(gij);
+      scaled = vi .* dxi(ri)';
+      dPa(i,j) = dPa(i,j) + sum(scaled);
+      if i > 1 && hI(i-1,j) ~= 0
+        w = hI(i-1,j) * dm.fx{dp.IC(j), iCurPortfolio}(i-1);
+        iiAll_xi = [iiAll_xi; i*ones(numel(ri),1)];
+        jjAll_xi = [jjAll_xi; ri];
+        vAll_xi  = [vAll_xi;  w * scaled];
+      end
     end
-    [ii,jj,v] = find(dPxi{i,j});
-    for k=1:length(ii)
-      dPxi{i,j}(ii(k),jj(k)) = v(k)*dxi(ii(k));
+    Hij = H_i{j};
+    if ~isempty(Hij) && nnz(Hij) > 0
+      [ri, ci, vi] = find(Hij);
+      qvals = 0.5 * vi .* dxi(ri)' .* dxi(ci)';
+      qsum = sum(qvals);
+      dPa(i,j) = dPa(i,j) + qsum;
+      if i > 1
+        dVhdPqf(i) = dVhdPqf(i) + hI(i-1,j) * dm.fx{dp.IC(j), iCurPortfolio}(i-1) * qsum;
+      end
     end
-    if (nnz(dPxi{i,j}) == 0) % Number of nonzero elements is equal to 0
-      dPxi{i,j} = [];
-    end
-    [ii,jj,v] = find(dPq{i,j});
-    for k=1:length(ii)
-      dPq{i,j}(ii(k),jj(k)) = 0.5*v(k)*dxi(ii(k))*dxi(jj(k));
-    end
-    if (nnz(dPq{i,j}) == 0) % Number of nonzero elements is equal to 0
-      dPq{i,j} = [];
-    end
-    dPa(i,j) = dPa(i,j)+sum(dPxi{i,j})+sum(sum(dPq{i,j}));
-  end  
+  end
 end
+
+if isempty(iiAll_xi)
+  dVhdPxifMat = sparse(M, N_xi);
+else
+  dVhdPxifMat = sparse(iiAll_xi, jjAll_xi, vAll_xi, M, N_xi);
+end
+dVhdPxif = full(sum(dVhdPxifMat, 2));
+clear dmPrev dcPrev;
 
 dP = dp.P - PPrevTot;
 depsa = dP - dPa - depsI;
@@ -269,60 +271,6 @@ for j=1:N
   dVhdepsaf(2:end) = dVhdepsaf(2:end) + hI(1:end-1, j).*depsa(2:end, j).*dm.fx{dp.IC(j), iCurPortfolio}(1:end-1);
   dVhdepsIf(2:end) = dVhdepsIf(2:end) + hI(1:end-1, j).*depsI(2:end, j).*dm.fx{dp.IC(j), iCurPortfolio}(1:end-1);
   dVhdepsPf(2:end) = dVhdepsPf(2:end) + hI(1:end-1, j).*depsP(2:end, j).*dm.fx{dp.IC(j), iCurPortfolio}(1:end-1);
-end
-
-% dVhdPxifVec = cell(M,1);
-% dVhdPxif = zeros(M,1);
-% for i=2:M
-%   iiAll = [];
-%   jjAll = [];
-%   vAll = [];
-%   for j=1:N
-%     if (hI(i-1, j) == 0)
-%       continue;
-%     end
-%     [ii,jj,v] = find(dPxi{i,j});
-%     iiAll = [iiAll ; ii];
-%     jjAll = [jjAll ; jj];
-%     vAll = [vAll ; hI(i-1, j)*v*dm.fx{dp.IC(j), iCurPortfolio}(i-1)];
-%   end
-%   dVhdPxifVec{i} = sparse(iiAll, jjAll, vAll);
-%   dVhdPxif(i) = sum(dVhdPxifVec{i});
-% end
-iiAll = [];
-jjAll = [];
-vAll = [];
-for i=2:M
-  for j=1:N
-    if (hI(i-1, j) == 0)
-      continue;
-    end
-    [ii,jj,v] = find(dPxi{i,j});
-    iiAll = [iiAll ; i*ones(size(jj))];
-    jjAll = [jjAll ; ii];
-    vAll = [vAll ; hI(i-1, j)*v*dm.fx{dp.IC(j), iCurPortfolio}(i-1)];
-  end
-end
-dVhdPxifMat = sparse(iiAll, jjAll, vAll, M, size(dc.xi,2));
-dVhdPxif = full(sum(dVhdPxifMat,2));
-
-dVhdPqfMat = cell(M,1);
-dVhdPqf = zeros(M,1);
-for i=2:M
-  iiAll = [];
-  jjAll = [];
-  vAll = [];
-  for j=1:N
-    if (~activeAssets(j))
-      continue;
-    end
-    [ii,jj,v] = find(dPq{i,j});
-    iiAll = [iiAll ; ii];
-    jjAll = [jjAll ; jj];
-    vAll = [vAll ; hI(i-1, j)*v*dm.fx{dp.IC(j), iCurPortfolio}(i-1)];
-  end
-  dVhdPqfMat{i} = sparse(iiAll, jjAll, vAll);
-  dVhdPqf(i) = sum(sum(dVhdPqfMat{i}));
 end
 
 dVhPdf = zeros(M,Nc);

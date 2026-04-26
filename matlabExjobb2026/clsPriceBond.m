@@ -83,6 +83,37 @@ classdef clsPriceBond < handle
         end
       end
 
+      function [g_i, H_i] = priceRowGH(pb, dm, dc, i)
+        N = size(dc.xi, 2);
+        gi=[]; gVal=[]; Hi=[]; Hj=[]; HVal=[];
+        lDate = min([max(pb.cfDates) dm.dates(end)]);
+        fDate = max([pb.firstDate dm.dates(1)]);
+        if dm.dates(i) >= fDate && dm.dates(i) <= lDate
+          ind = find(pb.cfDates > dm.dates(i));
+          for j = 1:length(ind)
+            jj = ind(j);
+            f = dm.fx{pb.iCurCf(jj), pb.iCurBond}(i);
+            t = pb.cfDates(jj) - dm.dates(i) + 1;
+            d = dm.d{pb.iCurCf(jj)}(i,t) * pb.cf(jj);
+            indf = dc.xif2xiInd(pb.iCurCf(jj), pb.iCurBond);
+            indPC = dc.xiI2xiInd{pb.iCurCf(jj)};
+            nPC = length(indPC);
+            dInterior = dm.negIntE{pb.iCurCf(jj)}(t,:)';
+            gi = [gi; indf; indPC];
+            gVal = [gVal; d; f*d*dInterior];
+            Hi = [Hi; ones(nPC,1)*indf]; Hj = [Hj; indPC]; HVal = [HVal; d*dInterior];
+            Hj = [Hj; ones(nPC,1)*indf]; Hi = [Hi; indPC]; HVal = [HVal; d*dInterior];
+            tmp = f*d*dInterior*dInterior';
+            iInd = repmat(indPC', nPC, 1); jInd = repmat(indPC, 1, nPC);
+            Hj = [Hj; iInd(:)]; Hi = [Hi; jInd(:)]; HVal = [HVal; tmp(:)];
+          end
+        end
+        if isempty(gi), g_i = sparse(N,1);
+        else,           g_i = sparse(gi, ones(size(gi)), gVal, N, 1); end
+        if isempty(Hi), H_i = sparse(N,N);
+        else,           H_i = sparse(Hi, Hj, HVal, N, N); end
+      end
+
       function [D] = dividends(obj, dm, dc)
         Nc = length(dm.cName);
         indCF = ((obj.cfDates >= dm.dates(1)) & (obj.cfDates <= dm.dates(end)));

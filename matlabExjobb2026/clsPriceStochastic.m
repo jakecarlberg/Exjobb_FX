@@ -33,6 +33,14 @@ classdef clsPriceStochastic < handle
         end
       end
       
+      function [g_i, H_i] = priceRowGH(obj, dm, dc, i)
+        N = size(dc.xi, 2);
+        indf = dc.xif2xiInd(obj.iCurXi, obj.iCurPrice);
+        indp = dc.xiP2xiInd(obj.iXip);
+        g_i = sparse([indf; indp], [1;1], [dc.xi(i,indp); dc.xi(i,indf)], N, 1);
+        H_i = sparse([indf; indp], [indp; indf], [1;1], N, N);
+      end
+
       function [D] = dividends(obj, dm, dc)
         Nc = length(dm.cName);
         D = cell(Nc, 1);

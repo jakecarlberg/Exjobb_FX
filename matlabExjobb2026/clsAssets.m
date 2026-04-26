@@ -100,6 +100,20 @@ classdef clsAssets < handle
         end
       end
       
+      function [g_i, H_i] = priceRowGH(obj, dm, dc, i, activeAssets)
+        N = length(obj.assets);
+        if nargin == 4
+          activeAssets = true(N,1);
+        end
+        g_i = cell(1, N);
+        H_i = cell(1, N);
+        ind = [obj.indPriceInventory obj.indPriceShrinkage obj.indManufactured obj.indBond];
+        for j = 1:length(ind)
+          if ~activeAssets(j), continue; end
+          [g_i{j}, H_i{j}] = obj.assets{ind(j)}.priceRowGH(dm, dc, i);
+        end
+      end
+
       function [Ic] = pricingCurrency(obj)
         N = length(obj.assets);
         ind = [obj.indPriceInventory obj.indPriceShrinkage obj.indManufactured obj.indBond];
