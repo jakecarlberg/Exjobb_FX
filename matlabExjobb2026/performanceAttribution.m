@@ -275,7 +275,9 @@ end
 
 dVhPdf = zeros(M,Nc);
 for k=1:Nc
-  ind = ((dp.IC==k) & activeAssets);
+  % Restrict to AR/AP bonds only: excludes inventory (priced in procurement
+  % currency) and BOM products — neither are monetary items under IAS 21.
+  ind = ((dp.IC==k) & activeAssets & dp.arApBondMask');
   dVhPdf(2:end, k) = sum(hI(1:end-1,ind).*PPrevTot(2:end,ind),2).*diff(dm.fx{k, iCurPortfolio});
 end
 dVhPtotdf = sum(dVhPdf,2);
@@ -288,15 +290,27 @@ dVhdepsf(2:end) = sum(hI(1:end-1,:).*depsf(2:end,:),2);
 % All benchmarks expressed in SEK for comparison with Method 1 and Method 2.
 
 % Transactional FX (Eq. 4.45): in EUR (PAM runs in EUR)
-%   dPf = FX-rate sensitivity of instruments (FX columns of dVhdPxifMat)
-%   dPc = currency-price cross term (dVhdepsf)
-%   These capture transaction->EUR rate moves only (EUR is portfolio currency,
-%   so EUR/SEK does not appear as a risk factor here)
-iXifCols = 1:Nc^2;  % First Nc^2 xi columns are FX rate risk factors
-dFX_trans_EUR = [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
+%   ΔP^f_t = dVhPtotdf: FX revaluation of foreign-currency positions at previous-period prices.
+%     For EUR-priced assets (BOM with iCurBOM=EUR), Δf{EUR,EUR}=0 → zero contribution
+%     (correctly excluded: not a "receivable or payable" in the thesis sense).
+%     For USD/GBP bonds (AR/AP), Δf{k,EUR}≠0 → captures their FX revaluation. ✓
+%   ΔP^c_t = dVhdepsf: currency-price cross term.
+%     For EUR-priced BOM, Δf{EUR,EUR}=0 → zero contribution (auto-excluded). ✓
+%   NOTE: dVhdPxifMat FX columns capture BOM *price-gradient* FX sensitivity
+%   (∂P_EUR/∂f_{USD,EUR} ≠ 0 for clsPriceBomXi), NOT AR/AP revaluation.
+%   Using dVhPtotdf correctly restricts the benchmark to receivables/payables.
+dFX_trans_EUR = dVhPtotdf + dVhdepsf;
 
-% Translate transactional FX to SEK at daily EUR/SEK rate (Eq. 4.45 in SEK)
-dFX_trans = dFX_trans_EUR .* f_EUR_SEK;
+% Transactional FX — Bonds + BOM (full economic exposure):
+%   Adds dVhdPxifMat FX cols, which captures BOM price gradient sensitivity
+%   (∂P_EUR/∂f_{USD,EUR} ≠ 0 for clsPriceBomXi). Represents the forward USD
+%   exposure embedded in WIP from the order date onward, on top of AR/AP.
+iXifCols = 1:Nc^2;
+dFX_trans_BOM_EUR = dVhPtotdf + [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
+
+% Translate both variants to SEK at daily EUR/SEK rate
+dFX_trans     = dFX_trans_EUR     .* f_EUR_SEK;
+dFX_trans_BOM = dFX_trans_BOM_EUR .* f_EUR_SEK;
 
 % Translation FX (Eq. 4.46): daily change from SEK run minus EUR run converted to SEK
 % V_SEK comes from the second PAM run (c_p = SEK), isolating EUR/SEK movements
@@ -331,7 +345,8 @@ dr.V_SEK_const        = V_SEK_const;
 dr.V_SEK_transl_const = V_SEK_transl_const;
 dr.V_SEK_LY           = V_SEK_LY;
 dr.V_SEK_transl_LY    = V_SEK_transl_LY;
-dr.dFX_trans_EUR = dFX_trans_EUR;
+dr.dFX_trans_EUR     = dFX_trans_EUR;
+dr.dFX_trans_BOM_EUR = dFX_trans_BOM_EUR;
 dr.dVdI      = dVdI;
 dr.dVhRdf    = dVhRdf;
 dr.dVhDdf    = dVhDdf;
@@ -346,9 +361,11 @@ dr.dVhdepsPf = dVhdepsPf;
 dr.dVhPtotdf = dVhPtotdf;
 dr.dVhdepsf  = dVhdepsf;
 dr.dFX_trans      = dFX_trans;
+dr.dFX_trans_BOM  = dFX_trans_BOM;
 dr.dFX_transl     = dFX_transl;
 dr.dFX_cc         = dFX_cc;
 dr.FX_trans       = cumsum(dFX_trans);
+dr.FX_trans_BOM   = cumsum(dFX_trans_BOM);
 dr.FX_transl      = cumsum(dFX_transl);
 dr.FX_cc          = cumsum(dFX_cc);
 dr.f_EUR_SEK_comp  = f_EUR_SEK_comp;
@@ -498,9 +515,9 @@ if doPlot
   % PAM FX Benchmarks (thesis Eqs. 4.45-4.47) — all in SEK
   % -----------------------------------------------------------------------
   figure(7);
-  plot(dm.dates, [dr.FX_trans, dr.FX_transl, dr.FX_cc]);
+  plot(dm.dates, [dr.FX_trans, dr.FX_trans_BOM, dr.FX_transl, dr.FX_cc]);
   datetick('x', 'yyyy');
-  legend({'Transactional FX (Eq.4.45)', 'Translation FX (Eq.4.46)', 'Constant-currency FX (Eq.4.47)'}, 'Location', 'Best');
+  legend({'Trans FX — Bonds only (Eq.4.45)', 'Trans FX — Bonds+BOM', 'Translation FX (Eq.4.46)', 'Constant-currency FX (Eq.4.47)'}, 'Location', 'Best');
   title('PAM FX Benchmarks (cumulative, SEK)');
 
   figure(8);
@@ -516,9 +533,10 @@ if doPlot
   title('PAM Constant Currency — Last Year Daily Rates (cumulative, SEK)');
 
   fprintf('\n=== PAM FX Benchmarks (cumulative over full period, SEK) ===\n');
-  fprintf('  Transactional FX     (Eq.4.45): %20s\n', fmtNum(dr.FX_trans(end), 2));
-  fprintf('  Translation FX       (Eq.4.46): %20s\n', fmtNum(dr.FX_transl(end), 2));
-  fprintf('  Constant-currency FX (Eq.4.47): %20s\n', fmtNum(dr.FX_cc(end), 2));
+  fprintf('  Trans FX — Bonds only (Eq.4.45): %20s\n', fmtNum(dr.FX_trans(end), 2));
+  fprintf('  Trans FX — Bonds+BOM:             %20s\n', fmtNum(dr.FX_trans_BOM(end), 2));
+  fprintf('  Translation FX        (Eq.4.46): %20s\n', fmtNum(dr.FX_transl(end), 2));
+  fprintf('  Constant-currency FX  (Eq.4.47): %20s\n', fmtNum(dr.FX_cc(end), 2));
   fprintf('\n=== PAM CC Decomposition — Quarterly Avg Rates (cumulative, SEK) ===\n');
   fprintf('  CC Transaction component:       %20s\n', fmtNum(dr.FX_trans_CC(end), 2));
   fprintf('  CC Translation component:       %20s\n', fmtNum(dr.FX_transl_CC(end), 2));
