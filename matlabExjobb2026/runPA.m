@@ -31,13 +31,29 @@ createMatFilesSim(dm, 1, true);
 [dr] = performanceAttribution(dm, dc, dp);
 
 % -------------------------------------------------------------------------
-% Method 2 — Industry accounting method with sub-period average rates
-%  Three variants: weekly, monthly, quarterly averaging windows.
-%  Same shared core (EUR P&L + balance sheet); only the
-%  translation step differs (daily rate → sub-period avg rate).
+% Method 1 & 2 — shared accounting core then each method
 % -------------------------------------------------------------------------
+addpath(fullfile('IndustryMethods'));
+addpath(fullfile('IndustryMethods','Method1'));
 addpath(fullfile('IndustryMethods','Method2'));
-m2 = computeMethod2(dm, dc);
+
+bs  = buildBalanceSheet(dm, dc);
+pnl = buildFunctionalPnL(dm, dc, bs);
+
+m1 = computeMethod1(dm, dc, '', bs, pnl);
+
+fprintf('\n=== Method 1: FX Impacts per Quarter (SEK) ===\n');
+fprintf('%-12s %14s %14s\n', 'Period end', 'TI', 'OCI');
+fprintf('%s\n', repmat('-', 1, 42));
+for p = 1:length(m1.periodEndDates)
+  if m1.TI(p) == 0 && m1.OCI(p) == 0, continue; end
+  fprintf('%-12s %14s %14s\n', datestr(m1.periodEndDates(p), 'yyyy-mm-dd'), ...
+    fmtNum(m1.TI(p)), fmtNum(m1.OCI(p)));
+end
+fprintf('%s\n', repmat('-', 1, 42));
+fprintf('%-12s %14s %14s\n', 'TOTAL', fmtNum(sum(m1.TI)), fmtNum(sum(m1.OCI)));
+
+m2 = computeMethod2(dm, dc, '', bs, pnl);
 
 fprintf('\n=== Method 2: FX Impacts per Quarter (SEK) — all 3 averaging windows ===\n');
 fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', 'Period end', ...
@@ -62,3 +78,67 @@ fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', 'TOTAL', ...
   fmtNum(sum(m2.quarterly.TI)), fmtNum(sum(m2.quarterly.OCI)));
 
 fprintf('\nFinal portfolio value (SEK): %s\n', fmtNum(dr.V(end), 4));
+
+% =========================================================================
+% 2x2 COMPARISON PLOT — PAM vs Method 1 vs Method 2 (monthly)
+% =========================================================================
+periodDates = makeQuarterDates(dm.dates(1), dm.dates(end));
+nPeriods    = length(periodDates) - 1;
+qDates      = periodDates(2:end);
+
+% Aggregate PAM daily series to quarters
+PAM_TI_q     = zeros(nPeriods, 1);
+PAM_TI_BOM_q = zeros(nPeriods, 1);
+PAM_OCI_q    = zeros(nPeriods, 1);
+for p = 1:nPeriods
+  idx = find(dm.dates > periodDates(p) & dm.dates <= periodDates(p+1));
+  if ~isempty(idx)
+    PAM_TI_q(p)     = sum(dr.dFX_trans(idx));
+    PAM_TI_BOM_q(p) = sum(dr.dFX_trans_BOM(idx));
+    PAM_OCI_q(p)    = sum(dr.dFX_transl(idx));
+  end
+end
+
+% EUR/SEK spot rate
+iEUR = find(strcmp(dm.cName, 'EUR'));
+iSEK = find(strcmp(dm.cName, 'SEK'));
+eurSEK = dm.fx{iEUR, iSEK};
+
+figure(20); clf;
+
+% --- Panel 1: Transaction Impact ---
+subplot(2,2,1); hold on;
+plot(qDates, cumsum(PAM_TI_q)/1e6,     'LineWidth', 1.5);
+plot(qDates, cumsum(PAM_TI_BOM_q)/1e6, 'LineWidth', 1.5);
+plot(m1.periodEndDates, cumsum(m1.TI)/1e6,         'LineWidth', 1.5);
+plot(m2.periodEndDates, cumsum(m2.monthly.TI)/1e6, 'LineWidth', 1.5);
+datetick('x', 'yyyy', 'keepticks'); grid on;
+ylabel('SEK (millions)'); title('Transaction Impact (cumulative)');
+legend('PAM — Bonds (Eq.4.45)', 'PAM — Bonds+BOM', 'Method 1', 'Method 2 (monthly)', 'Location', 'best');
+
+% --- Panel 2: Translation / OCI ---
+subplot(2,2,2); hold on;
+plot(qDates, cumsum(PAM_OCI_q)/1e6,                 'LineWidth', 1.5);
+plot(m1.periodEndDates, cumsum(m1.OCI)/1e6,         'LineWidth', 1.5);
+plot(m2.periodEndDates, cumsum(m2.monthly.OCI)/1e6, 'LineWidth', 1.5);
+datetick('x', 'yyyy', 'keepticks'); grid on;
+ylabel('SEK (millions)'); title('Translation Impact / OCI (cumulative)');
+legend('PAM (Eq.4.46)', 'Method 1', 'Method 2 (monthly)', 'Location', 'best');
+
+% --- Panel 3: Constant Currency (PAM only — CY and LY rates) ---
+subplot(2,2,3); hold on;
+plot(qDates, cumsum(dr.FX_cc_total_quarterly(:))/1e6,    'LineWidth', 1.5);
+plot(qDates, cumsum(dr.FX_cc_LY_total_quarterly(:))/1e6, 'LineWidth', 1.5);
+datetick('x', 'yyyy', 'keepticks'); grid on;
+ylabel('SEK (millions)'); title('Constant-Currency FX (cumulative, PAM)');
+legend('CC — current yr rates', 'CC — last yr rates', 'Location', 'best');
+
+% --- Panel 4: EUR/SEK rate ---
+subplot(2,2,4);
+plot(dm.dates, eurSEK, 'k-', 'LineWidth', 1.2);
+datetick('x', 'yyyy', 'keepticks'); grid on;
+ylabel('SEK per EUR'); title('EUR/SEK Exchange Rate');
+
+sgtitle('PAM vs Method 1 vs Method 2 — FX Impact Comparison');
+
+runExcelExport;

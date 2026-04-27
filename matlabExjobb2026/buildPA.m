@@ -288,6 +288,22 @@ end
 % Data for performance attribution (dp = data performance attribution)
 dp.IC = dc.assets.pricingCurrency(); % Defines the set Ic = find(IC==c) for c = 1, ..., Nc
 
+% Bond mask: true for AR and AP zero-coupon bonds only.
+% Used in performanceAttribution to restrict dVhPtotdf (PAM TI) to
+% receivables/payables only, excluding inventory/BOM/shrinkage assets
+% which are also priced in non-EUR currencies but are NOT monetary items.
+arApBondMask = false(1, N);
+for i = 1:length(dc.a.jBond)
+  if dc.a.jBond(i) > 0
+    arApBondMask(dc.assets.indBond(dc.a.jBond(i))) = true;
+  end
+end
+for i = 1:length(dc.ap.jBond)
+  if dc.ap.jBond(i) > 0
+    arApBondMask(dc.assets.indBond(dc.ap.jBond(i))) = true;
+  end
+end
+dp.arApBondMask = arApBondMask;
 
 dp.hI0 = h0;
 dp.xBI = sparse(iiB, jjB, xBv, M, N);

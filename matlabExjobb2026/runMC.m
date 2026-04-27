@@ -70,7 +70,8 @@ end
 % =========================================================================
 
 % --- PAM benchmarks -------------------------------------------------------
-mc.FX_trans     = nan(K, nPeriods);   % Transactional FX per quarter (Eq. 4.45)
+mc.FX_trans     = nan(K, nPeriods);   % Transactional FX — Bonds only (Eq. 4.45)
+mc.FX_trans_BOM = nan(K, nPeriods);   % Transactional FX — Bonds + BOM
 mc.FX_transl    = nan(K, nPeriods);   % Translation FX per quarter   (Eq. 4.46)
 mc.FX_cc        = nan(K, nPeriods);   % Constant-currency per quarter (Eq. 4.47)
 mc.FX_trans_CC  = nan(K, nPeriods);   % CC transaction component
@@ -115,9 +116,10 @@ for k = 1:K
     for p = 1:nPeriods
       idx = quarterIdx{p};
       if ~isempty(idx)
-        mc.FX_trans(k,  p) = sum(dr.dFX_trans(idx));
-        mc.FX_transl(k, p) = sum(dr.dFX_transl(idx));
-        mc.FX_cc(k,     p) = sum(dr.dFX_cc(idx));
+        mc.FX_trans(k,     p) = sum(dr.dFX_trans(idx));
+        mc.FX_trans_BOM(k, p) = sum(dr.dFX_trans_BOM(idx));
+        mc.FX_transl(k,    p) = sum(dr.dFX_transl(idx));
+        mc.FX_cc(k,        p) = sum(dr.dFX_cc(idx));
       end
     end
     mc.FX_trans_CC(k,  :) = dr.FX_trans_CC_quarterly(:)';
@@ -162,8 +164,9 @@ fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
 % =========================================================================
 % SUMMARY STATISTICS  (across iterations, per quarter)
 % =========================================================================
-valid = ~any(isnan(mc.FX_trans),  2) & ...
-        ~any(isnan(mc.FX_cc_total), 2) & ...
+valid = ~any(isnan(mc.FX_trans),     2) & ...
+        ~any(isnan(mc.FX_trans_BOM), 2) & ...
+        ~any(isnan(mc.FX_cc_total),  2) & ...
         ~any(isnan(mc.FX_cc_LY_total), 2) & ...
         ~any(isnan(mc.M1_TI),  2) & ...
         ~any(isnan(mc.M2m_TI), 2);
@@ -181,11 +184,11 @@ for p = 1:nPeriods
 end
 
 fprintf('\n=== Full-period totals (sum of quarters) ===\n');
-names  = {'Transactional (Eq.4.45)', 'Translation   (Eq.4.46)', 'Const-currency(Eq.4.47)'};
-fields = {'FX_trans', 'FX_transl', 'FX_cc'};
+names  = {'Trans — Bonds only (Eq.4.45)', 'Trans — Bonds+BOM      ', 'Translation   (Eq.4.46)', 'Const-currency(Eq.4.47)'};
+fields = {'FX_trans', 'FX_trans_BOM', 'FX_transl', 'FX_cc'};
 fprintf('%-28s %12s %12s %12s %12s %12s\n', '', 'Mean', 'Std', 'P5', 'Median', 'P95');
 fprintf('%s\n', repmat('-', 1, 80));
-for f = 1:3
+for f = 1:4
   x = sum(mc.(fields{f})(valid, :), 2);
   fprintf('%-28s %12.0f %12.0f %12.0f %12.0f %12.0f\n', names{f}, ...
     mean(x), std(x), prctile(x,5), median(x), prctile(x,95));
@@ -202,6 +205,7 @@ nYears      = length(uniqueYears);
 % For each year: sum the quarterly MC means within the year.
 % Equivalent to: mean over valid iters of (sum of quarters in year).
 TI_annual       = zeros(nYears, 1);
+TI_BOM_annual   = zeros(nYears, 1);
 OCI_annual      = zeros(nYears, 1);
 CCt_annual      = zeros(nYears, 1);
 CCtr_annual     = zeros(nYears, 1);
@@ -213,6 +217,7 @@ CCtl_LY_annual  = zeros(nYears, 1);
 for y = 1:nYears
   qMask = (qYears == uniqueYears(y));
   TI_annual(y)      = mean(sum(mc.FX_trans(valid,        qMask), 2));
+  TI_BOM_annual(y)  = mean(sum(mc.FX_trans_BOM(valid,    qMask), 2));
   OCI_annual(y)     = mean(sum(mc.FX_transl(valid,       qMask), 2));
   CCt_annual(y)     = mean(sum(mc.FX_cc_total(valid,     qMask), 2));
   CCtr_annual(y)    = mean(sum(mc.FX_trans_CC(valid,     qMask), 2));
@@ -233,17 +238,17 @@ for y = 1:nYears
 end
 
 fprintf('\n=== PAM — Annual Results (mean over %d iterations, SEK) ===\n', nValid);
-fprintf('%-6s %14s %14s %14s %14s %14s\n', ...
-  'Year', 'TI', 'OCI', 'CC_total', 'CC_trans', 'CC_transl');
-fprintf('%s\n', repmat('-', 1, 82));
+fprintf('%-6s %14s %14s %14s %14s %14s %14s\n', ...
+  'Year', 'TI (bonds)', 'TI (bonds+BOM)', 'OCI', 'CC_total', 'CC_trans', 'CC_transl');
+fprintf('%s\n', repmat('-', 1, 96));
 for y = 1:nYears
-  fprintf('%-6d %14.0f %14.0f %14.0f %14.0f %14.0f\n', ...
-    uniqueYears(y), TI_annual(y), OCI_annual(y), ...
+  fprintf('%-6d %14.0f %14.0f %14.0f %14.0f %14.0f %14.0f\n', ...
+    uniqueYears(y), TI_annual(y), TI_BOM_annual(y), OCI_annual(y), ...
     CCt_annual(y), CCtr_annual(y), CCtl_annual(y));
 end
-fprintf('%s\n', repmat('-', 1, 82));
-fprintf('%-6s %14.0f %14.0f %14.0f %14.0f %14.0f\n', 'TOTAL', ...
-  sum(TI_annual), sum(OCI_annual), sum(CCt_annual), ...
+fprintf('%s\n', repmat('-', 1, 96));
+fprintf('%-6s %14.0f %14.0f %14.0f %14.0f %14.0f %14.0f\n', 'TOTAL', ...
+  sum(TI_annual), sum(TI_BOM_annual), sum(OCI_annual), sum(CCt_annual), ...
   sum(CCtr_annual), sum(CCtl_annual));
 
 fprintf('\n=== PAM Constant Currency — Last Year Daily Rates (mean over %d iterations, SEK) ===\n', nValid);
@@ -263,16 +268,20 @@ fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
 qLabels = datestr(periodDates(2:end), 'yyyy-Qq');
 
 figure(10); clf;
-subplot(3,1,1);
-boxplot(mc.FX_trans(valid,:));  set(gca,'XTickLabel',[]); ylabel('SEK');
-title('Transactional FX per quarter (Eq.4.45)');
+subplot(4,1,1);
+boxplot(mc.FX_trans(valid,:));     set(gca,'XTickLabel',[]); ylabel('SEK');
+title('Transactional FX — Bonds only (Eq.4.45)');
 
-subplot(3,1,2);
-boxplot(mc.FX_transl(valid,:)); set(gca,'XTickLabel',[]); ylabel('SEK');
+subplot(4,1,2);
+boxplot(mc.FX_trans_BOM(valid,:)); set(gca,'XTickLabel',[]); ylabel('SEK');
+title('Transactional FX — Bonds + BOM');
+
+subplot(4,1,3);
+boxplot(mc.FX_transl(valid,:));    set(gca,'XTickLabel',[]); ylabel('SEK');
 title('Translation FX per quarter (Eq.4.46)');
 
-subplot(3,1,3);
-boxplot(mc.FX_cc(valid,:));     ylabel('SEK');
+subplot(4,1,4);
+boxplot(mc.FX_cc(valid,:));        ylabel('SEK');
 title('Constant-currency FX per quarter (Eq.4.47)');
 
 sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d)', nValid));
