@@ -7,8 +7,8 @@ clear settings;
 settings.dataFolder    = 'simulatedData';
 settings.bomPricing    = 'DeterministicCashFlows';
 settings.curFunctional = 'EUR';
-settings.startDate     = datenum(2007,1,1);  % Change to 2005 when FX data is available
-settings.endDate       = datenum(2025,12,31);
+settings.startDate     = datenum(2007,1,1);    % Change to 2005 when FX data is available
+settings.endDate       = datenum(2024,12,31);  % Change to 2025 when FX data is available
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
 % Thesis currencies only (Table 4.5 + procurement + functional/presentation)
