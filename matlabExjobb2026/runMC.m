@@ -1,14 +1,18 @@
-% runMC  Monte Carlo driver for PAM FX benchmark analysis
+% runMC  Monte Carlo driver — PAM + Method 1 + Method 2 FX benchmark analysis
 %
 % Runs K iterations of the full pipeline:
 %   createMatFilesSim -> createDataCompany -> buildPA -> performanceAttribution
+%                                          -> buildBalanceSheet/buildFunctionalPnL
+%                                          -> computeMethod1 / computeMethod2
 %
 % Market data (dm) is loaded once and kept fixed across all iterations,
 % consistent with the thesis (Section 4.2.1): stochastic transaction
 % datasets, fixed historical exchange rate series 2005-2025.
 %
-% Results are stored per quarter so the MC produces a distribution of
-% quarterly PAM FX outcomes (not just a full-period total).
+% bs and pnl (shared accounting core) are computed once per iteration and
+% passed to both computeMethod1 and computeMethod2 — no redundant work.
+%
+% Results are stored per quarter [K x nPeriods] for all methods.
 %
 % Usage:
 %   runMC              % default K=100
@@ -17,7 +21,7 @@
 % =========================================================================
 % SETTINGS
 % =========================================================================
-if ~exist('K',    'var'), K    = 100; end
+if ~exist('K',    'var'), K    = 10; end
 
 settings.dataFolder         = 'simulatedData';
 settings.bomPricing         = 'StochasticPrices';
@@ -31,6 +35,13 @@ settings.usedProductNumbers = [];
 settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','SEK','USD','ZAR'};
 
 marketDataSet = 'reutersZero';
+
+% =========================================================================
+% PATHS  (industry methods shared core + Method 1 + Method 2)
+% =========================================================================
+addpath(fullfile('IndustryMethods'));
+addpath(fullfile('IndustryMethods', 'Method1'));
+addpath(fullfile('IndustryMethods', 'Method2'));
 
 % =========================================================================
 % LOAD MARKET DATA ONCE  (fixed across MC iterations)
@@ -57,17 +68,32 @@ end
 % =========================================================================
 % PRE-ALLOCATE RESULT ARRAYS  [K x nPeriods]
 % =========================================================================
+
+% --- PAM benchmarks -------------------------------------------------------
 mc.FX_trans     = nan(K, nPeriods);   % Transactional FX per quarter (Eq. 4.45)
 mc.FX_transl    = nan(K, nPeriods);   % Translation FX per quarter   (Eq. 4.46)
 mc.FX_cc        = nan(K, nPeriods);   % Constant-currency per quarter (Eq. 4.47)
 mc.FX_trans_CC  = nan(K, nPeriods);   % CC transaction component
 mc.FX_transl_CC = nan(K, nPeriods);   % CC translation component
 mc.FX_cc_total  = nan(K, nPeriods);   % CC total (trans + transl)
-mc.FX_trans_CC_LY  = nan(K, nPeriods);   % CC transaction component — last year daily rates
-mc.FX_transl_CC_LY = nan(K, nPeriods);   % CC translation component — last year daily rates
-mc.FX_cc_LY_total  = nan(K, nPeriods);   % CC total — last year daily rates
-mc.seeds        = (1:K)';
-mc.periodDates  = periodDates;
+mc.FX_trans_CC_LY  = nan(K, nPeriods);
+mc.FX_transl_CC_LY = nan(K, nPeriods);
+mc.FX_cc_LY_total  = nan(K, nPeriods);
+
+% --- Method 1 (actual daily rate) ----------------------------------------
+mc.M1_TI  = nan(K, nPeriods);   % Transactional Impact (Eq. 4.21)
+mc.M1_OCI = nan(K, nPeriods);   % Translation Impact / OCI (Eq. 4.22-4.25)
+
+% --- Method 2 (sub-period average rate, 3 variants) ----------------------
+mc.M2w_TI  = nan(K, nPeriods);  % weekly avg — TI
+mc.M2w_OCI = nan(K, nPeriods);  % weekly avg — OCI
+mc.M2m_TI  = nan(K, nPeriods);  % monthly avg — TI
+mc.M2m_OCI = nan(K, nPeriods);  % monthly avg — OCI
+mc.M2q_TI  = nan(K, nPeriods);  % quarterly avg — TI
+mc.M2q_OCI = nan(K, nPeriods);  % quarterly avg — OCI
+
+mc.seeds       = (1:K)';
+mc.periodDates = periodDates;
 
 % =========================================================================
 % MONTE CARLO LOOP
@@ -81,10 +107,11 @@ for k = 1:K
 
   try
     dc = createDataCompany(dm, settings);
+
+    % --- PAM --------------------------------------------------------------
     dp = buildPA(dm, dc);
     dr = performanceAttribution(dm, dc, dp, false);
 
-    % Aggregate daily PAM contributions to quarters
     for p = 1:nPeriods
       idx = quarterIdx{p};
       if ~isempty(idx)
@@ -93,14 +120,30 @@ for k = 1:K
         mc.FX_cc(k,     p) = sum(dr.dFX_cc(idx));
       end
     end
-    % CC decomposition components — already at quarterly resolution in dr
     mc.FX_trans_CC(k,  :) = dr.FX_trans_CC_quarterly(:)';
     mc.FX_transl_CC(k, :) = dr.FX_transl_CC_quarterly(:)';
     mc.FX_cc_total(k,  :) = dr.FX_cc_total_quarterly(:)';
-    % PAM Constant Currency — Last Year Daily Rates
     mc.FX_trans_CC_LY(k,  :) = dr.FX_trans_CC_LY_quarterly(:)';
     mc.FX_transl_CC_LY(k, :) = dr.FX_transl_CC_LY_quarterly(:)';
     mc.FX_cc_LY_total(k,  :) = dr.FX_cc_LY_total_quarterly(:)';
+
+    % --- Shared accounting core (once per iteration) ----------------------
+    bs  = buildBalanceSheet(dm, dc);
+    pnl = buildFunctionalPnL(dm, dc, bs);
+
+    % --- Method 1 ---------------------------------------------------------
+    m1 = computeMethod1(dm, dc, '', bs, pnl);
+    mc.M1_TI(k,  :) = m1.TI(:)';
+    mc.M1_OCI(k, :) = m1.OCI(:)';
+
+    % --- Method 2 ---------------------------------------------------------
+    m2 = computeMethod2(dm, dc, '', bs, pnl);
+    mc.M2w_TI(k,  :) = m2.weekly.TI(:)';
+    mc.M2w_OCI(k, :) = m2.weekly.OCI(:)';
+    mc.M2m_TI(k,  :) = m2.monthly.TI(:)';
+    mc.M2m_OCI(k, :) = m2.monthly.OCI(:)';
+    mc.M2q_TI(k,  :) = m2.quarterly.TI(:)';
+    mc.M2q_OCI(k, :) = m2.quarterly.OCI(:)';
 
   catch ME
     fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
@@ -119,7 +162,11 @@ fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
 % =========================================================================
 % SUMMARY STATISTICS  (across iterations, per quarter)
 % =========================================================================
-valid = ~any(isnan(mc.FX_trans), 2) & ~any(isnan(mc.FX_cc_total), 2) & ~any(isnan(mc.FX_cc_LY_total), 2);
+valid = ~any(isnan(mc.FX_trans),  2) & ...
+        ~any(isnan(mc.FX_cc_total), 2) & ...
+        ~any(isnan(mc.FX_cc_LY_total), 2) & ...
+        ~any(isnan(mc.M1_TI),  2) & ...
+        ~any(isnan(mc.M2m_TI), 2);
 nValid = sum(valid);
 
 fprintf('\n=== PAM FX Benchmarks: mean per quarter across %d iterations (SEK) ===\n', nValid);

@@ -1,9 +1,10 @@
-function m2 = computeMethod2(dm, dc, verboseQuarter)
+function m2 = computeMethod2(dm, dc, verboseQuarter, bs, pnl)
 % computeMethod2  Compute Method 2 (sub-period avg rate) FX impacts for
 % all three averaging windows (weekly, monthly, quarterly).
 %
 %   m2 = computeMethod2(dm, dc)
-%   m2 = computeMethod2(dm, dc, 'YYYY-Qn')   % debug print one quarter
+%   m2 = computeMethod2(dm, dc, 'YYYY-Qn')          % debug print one quarter
+%   m2 = computeMethod2(dm, dc, '', bs, pnl)         % reuse pre-computed bs/pnl
 %
 % Orchestrates:
 %   1. Balance sheet  (buildBalanceSheet.m)
@@ -27,8 +28,8 @@ thisDir   = fileparts(mfilename('fullpath'));
 parentDir = fileparts(thisDir);
 addpath(parentDir);
 
-bs  = buildBalanceSheet(dm, dc);
-pnl = buildFunctionalPnL(dm, dc, bs);
+if nargin < 4 || isempty(bs),  bs  = buildBalanceSheet(dm, dc);      end
+if nargin < 5 || isempty(pnl), pnl = buildFunctionalPnL(dm, dc, bs); end
 
 m2.weekly    = translateMethod2(dm, pnl, bs, 'week');
 m2.monthly   = translateMethod2(dm, pnl, bs, 'month');
