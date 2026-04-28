@@ -93,6 +93,17 @@ mc.M2m_OCI = nan(K, nPeriods);  % monthly avg — OCI
 mc.M2q_TI  = nan(K, nPeriods);  % quarterly avg — TI
 mc.M2q_OCI = nan(K, nPeriods);  % quarterly avg — OCI
 
+% --- Constant-currency (CC) impacts [K x nPeriods] -----------------------
+% M1 variant: actual delivery-date rate vs prior-yr monthly avg
+mc.M1_CC_TI     = nan(K, nPeriods);
+mc.M1_CC_OCI    = nan(K, nPeriods);
+% avg variant: monthly avg rate current vs prior year
+mc.CC_avg_TI    = nan(K, nPeriods);
+mc.CC_avg_OCI   = nan(K, nPeriods);
+% close variant: period-opening closing rate current vs prior year
+mc.CC_close_TI  = nan(K, nPeriods);
+mc.CC_close_OCI = nan(K, nPeriods);
+
 mc.seeds       = (1:K)';
 mc.periodDates = periodDates;
 
@@ -146,6 +157,15 @@ for k = 1:K
     mc.M2m_OCI(k, :) = m2.monthly.OCI(:)';
     mc.M2q_TI(k,  :) = m2.quarterly.TI(:)';
     mc.M2q_OCI(k, :) = m2.quarterly.OCI(:)';
+
+    % --- Constant-currency (three variants) ---------------------------------
+    P = min(length(m1.cc.avg.quarterly_TI), nPeriods);
+    mc.M1_CC_TI(k,    1:P) = m1.cc.M1.quarterly_TI(1:P)';
+    mc.M1_CC_OCI(k,   1:P) = m1.cc.M1.quarterly_OCI(1:P)';
+    mc.CC_avg_TI(k,   1:P) = m1.cc.avg.quarterly_TI(1:P)';
+    mc.CC_avg_OCI(k,  1:P) = m1.cc.avg.quarterly_OCI(1:P)';
+    mc.CC_close_TI(k, 1:P) = m1.cc.close.quarterly_TI(1:P)';
+    mc.CC_close_OCI(k,1:P) = m1.cc.close.quarterly_OCI(1:P)';
 
   catch ME
     fprintf('  [iter %d] ERROR: %s\n', k, ME.message);

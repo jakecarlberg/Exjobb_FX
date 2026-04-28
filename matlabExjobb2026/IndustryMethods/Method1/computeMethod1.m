@@ -78,10 +78,13 @@ for q = 1:Q
   OCI(q) = BN_close_SEK - BE_SEK;
 end
 
-m1.periodEndDates = dm.dates(qEnd);
+m1.periodEndDates   = dm.dates(qEnd);
 m1.periodStartDates = dm.dates(qStart);
 m1.TI   = TI;
 m1.OCI  = OCI;
+
+% Constant-currency impact (monthly sub-period, M1 daily-rate variant)
+m1.cc = computeCC(dm, dc, pnl, bs, 'month');
 
 % Store intermediate structures for debugging
 m1.bs    = bs;

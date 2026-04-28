@@ -35,6 +35,12 @@ m2.weekly    = translateMethod2(dm, pnl, bs, 'week');
 m2.monthly   = translateMethod2(dm, pnl, bs, 'month');
 m2.quarterly = translateMethod2(dm, pnl, bs, 'quarter');
 
+% Constant-currency impact — method-independent, one call at monthly granularity.
+% CC is the same regardless of which TI/OCI sub-period window (week/month/quarter)
+% is used, because both components are computed from the shared EUR P&L and
+% direct c→SEK flows (see thesis tab:cc_variants).
+m2.cc = computeCC(dm, dc, pnl, bs, 'month');
+
 m2.periodEndDates   = dm.dates(pnl.quarterEndIdx);
 m2.periodStartDates = dm.dates(pnl.quarterStartIdx);
 m2.bs  = bs;

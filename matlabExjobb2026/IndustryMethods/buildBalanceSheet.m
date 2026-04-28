@@ -42,7 +42,7 @@ for k = 1:length(invRows)
   % Find matching payment row
   r2 = find(dc.a.transactionCode == 20 & dc.a.invoiceNumber == invNum, 1);
   if isempty(r2)
-    tP = dm.dates(end) + 1;                   % unsettled → stays open
+    tP = dm.dates(end) + 1;                   % unsettled so it stays open
   else
     tP = dc.a.accountingDate(r2);
   end

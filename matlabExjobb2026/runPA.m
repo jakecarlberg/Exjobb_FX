@@ -110,6 +110,20 @@ fprintf('%-20s %18s %18s\n', 'Method 2 quarterly',   fmtNum(sum(m2.quarterly.TI)
 
 fprintf('\nFinal portfolio value (SEK): %s\n', fmtNum(dr.V(end), 4));
 
+% -------------------------------------------------------------------------
+% Constant-currency comparison (cumulative totals, method-independent)
+% -------------------------------------------------------------------------
+fprintf('\n=== Constant-Currency FX Impact (cumulative SEK) ===\n');
+fprintf('%-22s %18s %18s\n', 'Variant', 'CC^trans (TI)', 'CC^transl (OCI)');
+fprintf('%s\n', repmat('-', 1, 60));
+fprintf('%-22s %18s %18s\n', 'M1 (daily vs LY avg)', ...
+  fmtNum(sum(m1.cc.M1.quarterly_TI)),    fmtNum(sum(m1.cc.M1.quarterly_OCI)));
+fprintf('%-22s %18s %18s\n', 'Average-rate', ...
+  fmtNum(sum(m1.cc.avg.quarterly_TI)),   fmtNum(sum(m1.cc.avg.quarterly_OCI)));
+fprintf('%-22s %18s %18s\n', 'Closing-rate', ...
+  fmtNum(sum(m1.cc.close.quarterly_TI)), fmtNum(sum(m1.cc.close.quarterly_OCI)));
+fprintf('%s\n', repmat('-', 1, 60));
+
 % =========================================================================
 % 2x2 COMPARISON PLOT — PAM vs Method 1 vs Method 2 (monthly)
 % =========================================================================

@@ -11,5 +11,11 @@
 # Claude worktrees
 .claude/worktrees/
 
+# Generated simulation output (recreated by createMatFilesSim on each run)
+matlabExjobb2026/simulatedData/*.mat
+
+# Generated Excel exports
+*.xlsx
+
 # Misc
 read
