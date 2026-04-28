@@ -24,7 +24,7 @@
 if ~exist('K',    'var'), K    = 10; end
 
 settings.dataFolder         = 'simulatedData';
-settings.bomPricing         = 'StochasticPrices';
+settings.bomPricing         = 'DeterministicCashFlows';
 settings.curFunctional      = 'EUR';
 settings.startDate          = datenum(2007,1,1);  % Change to 2005 when FX data is available
 settings.endDate            = datenum(2025,12,31);

@@ -77,6 +77,54 @@ fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', 'TOTAL', ...
   fmtNum(sum(m2.monthly.TI)),   fmtNum(sum(m2.monthly.OCI)), ...
   fmtNum(sum(m2.quarterly.TI)), fmtNum(sum(m2.quarterly.OCI)));
 
+% -------------------------------------------------------------------------
+% Quarterly comparison: PAM vs Method 1 vs Method 2
+% -------------------------------------------------------------------------
+
+% Aggregate PAM daily contributions into quarters using m1 quarter boundaries
+Q          = length(m1.periodEndDates);
+PAM_TI_q   = zeros(Q, 1);
+PAM_OCI_q  = zeros(Q, 1);
+qStartIdx  = m1.bs.dates * 0;   % placeholder — use pnl quarter indices from m1
+qSIdx      = m1.pnl.quarterStartIdx;
+qEIdx      = m1.pnl.quarterEndIdx;
+for q = 1:Q
+  rng = qSIdx(q):qEIdx(q);
+  PAM_TI_q(q)  = sum(dr.dFX_trans(rng));
+  PAM_OCI_q(q) = sum(dr.dFX_transl(rng));
+end
+
+fprintf('\n=== Quarterly comparison: PAM vs Method 1 vs Method 2 (monthly avg) — SEK ===\n');
+fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', ...
+  'Period end', 'PAM TI', 'PAM OCI', 'M1 TI', 'M1 OCI', 'M2m TI', 'M2m OCI');
+fprintf('%s\n', repmat('-', 1, 98));
+for q = 1:Q
+  allZero = PAM_TI_q(q)==0 && PAM_OCI_q(q)==0 && m1.TI(q)==0 && m1.OCI(q)==0;
+  if allZero, continue; end
+  fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', ...
+    datestr(m1.periodEndDates(q), 'yyyy-mm-dd'), ...
+    fmtNum(PAM_TI_q(q)),       fmtNum(PAM_OCI_q(q)), ...
+    fmtNum(m1.TI(q)),          fmtNum(m1.OCI(q)), ...
+    fmtNum(m2.monthly.TI(q)),  fmtNum(m2.monthly.OCI(q)));
+end
+fprintf('%s\n', repmat('-', 1, 98));
+fprintf('%-12s %14s %14s %14s %14s %14s %14s\n', 'TOTAL', ...
+  fmtNum(sum(PAM_TI_q)),          fmtNum(sum(PAM_OCI_q)), ...
+  fmtNum(sum(m1.TI)),             fmtNum(sum(m1.OCI)), ...
+  fmtNum(sum(m2.monthly.TI)),     fmtNum(sum(m2.monthly.OCI)));
+
+% -------------------------------------------------------------------------
+% Cross-method comparison (cumulative totals)
+% -------------------------------------------------------------------------
+fprintf('\n=== Cross-method comparison (cumulative SEK) ===\n');
+fprintf('%-20s %18s %18s\n', 'Method', 'TI', 'OCI');
+fprintf('%s\n', repmat('-', 1, 58));
+fprintf('%-20s %18s %18s\n', 'PAM (benchmark)',      fmtNum(sum(PAM_TI_q)),         fmtNum(sum(PAM_OCI_q)));
+fprintf('%-20s %18s %18s\n', 'Method 1 (daily)',     fmtNum(sum(m1.TI)),            fmtNum(sum(m1.OCI)));
+fprintf('%-20s %18s %18s\n', 'Method 2 weekly',      fmtNum(sum(m2.weekly.TI)),     fmtNum(sum(m2.weekly.OCI)));
+fprintf('%-20s %18s %18s\n', 'Method 2 monthly',     fmtNum(sum(m2.monthly.TI)),    fmtNum(sum(m2.monthly.OCI)));
+fprintf('%-20s %18s %18s\n', 'Method 2 quarterly',   fmtNum(sum(m2.quarterly.TI)),  fmtNum(sum(m2.quarterly.OCI)));
+
 fprintf('\nFinal portfolio value (SEK): %s\n', fmtNum(dr.V(end), 4));
 
 % =========================================================================
