@@ -21,7 +21,7 @@
 % Output: PAM_full_export.xlsx  (saved to Exjobb_FX root folder)
 
 if ~exist('dr', 'var')
-  cd('C:/Users/jhybn/Desktop/exjobb/Exjobb_FX/matlabExjobb2026');
+  cd(fileparts(mfilename('fullpath')));
 
   % =======================================================================
   % SETTINGS
@@ -191,7 +191,7 @@ fprintf('%-6s %13.0f %13.0f %13.0f %13.0f %13.0f %13.0f\n','TOTAL', ...
 % =========================================================================
 % EXCEL EXPORT
 % =========================================================================
-xlFile = fullfile('C:/Users/jhybn/Desktop/exjobb/Exjobb_FX', 'PAM_full_export.xlsx');
+xlFile = fullfile(fileparts(mfilename('fullpath')), '..', 'PAM_full_export.xlsx');
 fprintf('\nWriting %s ...\n', xlFile);
 
 % Helper: convert datenum column to date strings
