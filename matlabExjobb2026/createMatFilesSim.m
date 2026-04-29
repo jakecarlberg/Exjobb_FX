@@ -1,21 +1,24 @@
-function createMatFilesSim(dm, seed, verbose)
+function createMatFilesSim(dm, seed, verbose, dataFolder)
 % createMatFilesSim  Generate synthetic multi-currency transaction data.
 %
-%   createMatFilesSim(dm, seed, verbose)
+%   createMatFilesSim(dm, seed, verbose, dataFolder)
 %
-%   dm      - market data struct from createDataMarket (provides FX rates)
-%   seed    - RNG seed for reproducibility (default 1)
-%   verbose - print year-by-year summary to console (default true)
+%   dm         - market data struct from createDataMarket (provides FX rates)
+%   seed       - RNG seed for reproducibility (default 1)
+%   verbose    - print year-by-year summary to console (default true)
+%   dataFolder - output folder for .mat files (default 'simulatedData')
+%                Use worker-specific folders when running under parfor.
 %
 % The function generates a 21-year transaction history (2005-2025) for a
 % simulated manufacturing subsidiary.  Revenue and gross margin are
 % calibrated year by year to Sandvik's reported figures (Tables 4.3-4.4).
 % Component prices are scaled annually so that total COGS matches the
-% target margin.  The function writes all .mat files to simulatedData/ and
+% target margin.  The function writes all .mat files to dataFolder/ and
 % is designed to be called repeatedly inside a Monte Carlo loop (runMC.m).
 
-if nargin < 2 || isempty(seed),    seed    = 1;    end
-if nargin < 3 || isempty(verbose), verbose = true; end
+if nargin < 2 || isempty(seed),       seed       = 1;              end
+if nargin < 3 || isempty(verbose),    verbose    = true;           end
+if nargin < 4 || isempty(dataFolder), dataFolder = 'simulatedData'; end
 
 rng(seed);
 
@@ -52,8 +55,8 @@ inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 % Normal mode:  ~100-170 orders/year  (realistic volume, slow if reused for MC)
 % Test mode:    ~20-30 orders/year    (for manual verification — alpha-calibration
 %                                      still works, but transactions are tractable)
-% baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
-baseSellPriceEUR = [5000000, 25000000, 100000000];      % TEST MODE (×5 priser → ~20 orders/år)
+baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
+% baseSellPriceEUR = [5000000, 25000000, 100000000];      % TEST MODE (×5 priser → ~20 orders/år)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -658,24 +661,24 @@ c = table(cCostingData(:,1), cCostingData(:,2), cCostingData(:,3), cCostingData(
 
 % Ensure the output folder exists (git does not track empty directories,
 % so simulatedData/ may be absent after a fresh clone or pull).
-if ~exist('simulatedData', 'dir')
-  mkdir('simulatedData');
+if ~exist(dataFolder, 'dir')
+  mkdir(dataFolder);
 end
 
-save(fullfile('simulatedData', 'costing'),              'c');
-save(fullfile('simulatedData', 'BOM'),                  'b', 'productOrderDate');
-save(fullfile('simulatedData', 'Sales'),                'sa');
-save(fullfile('simulatedData', 'AccountsReceivable'),   'a');
-save(fullfile('simulatedData', 'stockTransactions'),    's');
-save(fullfile('simulatedData', 'purchaseOrder'),        'p');
-save(fullfile('simulatedData', 'itemNumberDictionary'), 'itemNumberDictionary', 'productNumberDictionary');
+save(fullfile(dataFolder, 'costing'),              'c');
+save(fullfile(dataFolder, 'BOM'),                  'b', 'productOrderDate');
+save(fullfile(dataFolder, 'Sales'),                'sa');
+save(fullfile(dataFolder, 'AccountsReceivable'),   'a');
+save(fullfile(dataFolder, 'stockTransactions'),    's');
+save(fullfile(dataFolder, 'purchaseOrder'),        'p');
+save(fullfile(dataFolder, 'itemNumberDictionary'), 'itemNumberDictionary', 'productNumberDictionary');
 
 ap = table(ap_invoiceNum, ap_txCode, ap_fxAmt, ap_cur, ap_dueDate, ap_accDate, ...
   'VariableNames', {'invoiceNumber','transactionCode','foreignCurrencyAmount','currency','dueDate','accountingDate'});
-save(fullfile('simulatedData', 'AccountsPayable'), 'ap');
+save(fullfile(dataFolder, 'AccountsPayable'), 'ap');
 
 % Dividend events for industry-method balance sheet tracking (cash sweeps to parent)
-save(fullfile('simulatedData', 'dividendEvents'), 'dividendEvents');
+save(fullfile(dataFolder, 'dividendEvents'), 'dividendEvents');
 
 %% ========================================================================
 %  VERBOSE YEAR-BY-YEAR SUMMARY

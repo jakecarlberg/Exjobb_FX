@@ -108,17 +108,50 @@ mc.seeds       = (1:K)';
 mc.periodDates = periodDates;
 
 % =========================================================================
-% MONTE CARLO LOOP
+% MONTE CARLO LOOP  (parfor — each worker uses its own simulatedData subfolder)
 % =========================================================================
 fprintf('Starting Monte Carlo: K=%d, nQuarters=%d\n\n', K, nPeriods);
 tStart = tic;
 
-for k = 1:K
+% Collect per-iteration results in a cell array (required for parfor)
+results = cell(K, 1);
 
-  createMatFilesSim(dm, k, false);
+% Progress counter via DataQueue (parfor-safe)
+dq    = parallel.pool.DataQueue;
+nDone = 0;
+afterEach(dq, @(~) fprintf('  %4d / %4d  (%.0fs elapsed)\n', ...
+  nDone + 1, K, toc(tStart)));
+
+parfor k = 1:K
+  % Each parallel worker writes to its own subfolder to avoid file conflicts
+  t = getCurrentTask();
+  if isempty(t)
+    wFolder = 'simulatedData';           % serial fallback (no parallel pool)
+  else
+    wFolder = fullfile('simulatedData', sprintf('worker_%d', t.ID));
+  end
+
+  localSettings            = settings;
+  localSettings.dataFolder = wFolder;
+
+  r = struct( ...
+    'FX_trans',      nan(1, nPeriods), 'FX_trans_BOM',  nan(1, nPeriods), ...
+    'FX_transl',     nan(1, nPeriods), 'FX_cc',         nan(1, nPeriods), ...
+    'FX_trans_CC',   nan(1, nPeriods), 'FX_transl_CC',  nan(1, nPeriods), ...
+    'FX_cc_total',   nan(1, nPeriods), 'FX_trans_CC_LY',nan(1, nPeriods), ...
+    'FX_transl_CC_LY',nan(1,nPeriods), 'FX_cc_LY_total',nan(1, nPeriods), ...
+    'M1_TI',  nan(1, nPeriods), 'M1_OCI',  nan(1, nPeriods), ...
+    'M2w_TI', nan(1, nPeriods), 'M2w_OCI', nan(1, nPeriods), ...
+    'M2m_TI', nan(1, nPeriods), 'M2m_OCI', nan(1, nPeriods), ...
+    'M2q_TI', nan(1, nPeriods), 'M2q_OCI', nan(1, nPeriods), ...
+    'M1_CC_TI',    nan(1, nPeriods), 'M1_CC_OCI',    nan(1, nPeriods), ...
+    'CC_avg_TI',   nan(1, nPeriods), 'CC_avg_OCI',   nan(1, nPeriods), ...
+    'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods));
+
+  createMatFilesSim(dm, k, false, wFolder);
 
   try
-    dc = createDataCompany(dm, settings);
+    dc = createDataCompany(dm, localSettings);
 
     % --- PAM --------------------------------------------------------------
     dp = buildPA(dm, dc);
@@ -127,56 +160,67 @@ for k = 1:K
     for p = 1:nPeriods
       idx = quarterIdx{p};
       if ~isempty(idx)
-        mc.FX_trans(k,     p) = sum(dr.dFX_trans(idx));
-        mc.FX_trans_BOM(k, p) = sum(dr.dFX_trans_BOM(idx));
-        mc.FX_transl(k,    p) = sum(dr.dFX_transl(idx));
-        mc.FX_cc(k,        p) = sum(dr.dFX_cc(idx));
+        r.FX_trans(p)     = sum(dr.dFX_trans(idx));
+        r.FX_trans_BOM(p) = sum(dr.dFX_trans_BOM(idx));
+        r.FX_transl(p)    = sum(dr.dFX_transl(idx));
+        r.FX_cc(p)        = sum(dr.dFX_cc(idx));
       end
     end
-    mc.FX_trans_CC(k,  :) = dr.FX_trans_CC_quarterly(:)';
-    mc.FX_transl_CC(k, :) = dr.FX_transl_CC_quarterly(:)';
-    mc.FX_cc_total(k,  :) = dr.FX_cc_total_quarterly(:)';
-    mc.FX_trans_CC_LY(k,  :) = dr.FX_trans_CC_LY_quarterly(:)';
-    mc.FX_transl_CC_LY(k, :) = dr.FX_transl_CC_LY_quarterly(:)';
-    mc.FX_cc_LY_total(k,  :) = dr.FX_cc_LY_total_quarterly(:)';
+    r.FX_trans_CC      = dr.FX_trans_CC_quarterly(:)';
+    r.FX_transl_CC     = dr.FX_transl_CC_quarterly(:)';
+    r.FX_cc_total      = dr.FX_cc_total_quarterly(:)';
+    r.FX_trans_CC_LY   = dr.FX_trans_CC_LY_quarterly(:)';
+    r.FX_transl_CC_LY  = dr.FX_transl_CC_LY_quarterly(:)';
+    r.FX_cc_LY_total   = dr.FX_cc_LY_total_quarterly(:)';
 
-    % --- Shared accounting core (once per iteration) ----------------------
+    % --- Shared accounting core -------------------------------------------
     bs  = buildBalanceSheet(dm, dc);
     pnl = buildFunctionalPnL(dm, dc, bs);
 
     % --- Method 1 ---------------------------------------------------------
     m1 = computeMethod1(dm, dc, '', bs, pnl);
-    mc.M1_TI(k,  :) = m1.TI(:)';
-    mc.M1_OCI(k, :) = m1.OCI(:)';
+    r.M1_TI  = m1.TI(:)';
+    r.M1_OCI = m1.OCI(:)';
 
     % --- Method 2 ---------------------------------------------------------
     m2 = computeMethod2(dm, dc, '', bs, pnl);
-    mc.M2w_TI(k,  :) = m2.weekly.TI(:)';
-    mc.M2w_OCI(k, :) = m2.weekly.OCI(:)';
-    mc.M2m_TI(k,  :) = m2.monthly.TI(:)';
-    mc.M2m_OCI(k, :) = m2.monthly.OCI(:)';
-    mc.M2q_TI(k,  :) = m2.quarterly.TI(:)';
-    mc.M2q_OCI(k, :) = m2.quarterly.OCI(:)';
+    r.M2w_TI  = m2.weekly.TI(:)';   r.M2w_OCI = m2.weekly.OCI(:)';
+    r.M2m_TI  = m2.monthly.TI(:)';  r.M2m_OCI = m2.monthly.OCI(:)';
+    r.M2q_TI  = m2.quarterly.TI(:)';r.M2q_OCI = m2.quarterly.OCI(:)';
 
-    % --- Constant-currency (three variants) ---------------------------------
+    % --- Constant-currency ------------------------------------------------
     P = min(length(m1.cc.avg.quarterly_TI), nPeriods);
-    mc.M1_CC_TI(k,    1:P) = m1.cc.M1.quarterly_TI(1:P)';
-    mc.M1_CC_OCI(k,   1:P) = m1.cc.M1.quarterly_OCI(1:P)';
-    mc.CC_avg_TI(k,   1:P) = m1.cc.avg.quarterly_TI(1:P)';
-    mc.CC_avg_OCI(k,  1:P) = m1.cc.avg.quarterly_OCI(1:P)';
-    mc.CC_close_TI(k, 1:P) = m1.cc.close.quarterly_TI(1:P)';
-    mc.CC_close_OCI(k,1:P) = m1.cc.close.quarterly_OCI(1:P)';
+    r.M1_CC_TI(1:P)    = m1.cc.M1.quarterly_TI(1:P)';
+    r.M1_CC_OCI(1:P)   = m1.cc.M1.quarterly_OCI(1:P)';
+    r.CC_avg_TI(1:P)   = m1.cc.avg.quarterly_TI(1:P)';
+    r.CC_avg_OCI(1:P)  = m1.cc.avg.quarterly_OCI(1:P)';
+    r.CC_close_TI(1:P) = m1.cc.close.quarterly_TI(1:P)';
+    r.CC_close_OCI(1:P)= m1.cc.close.quarterly_OCI(1:P)';
 
   catch ME
     fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
   end
 
-  if mod(k, max(1, round(K/10))) == 0
-    elapsed = toc(tStart);
-    eta     = elapsed / k * (K - k);
-    fprintf('  %4d / %4d  (%.0fs elapsed, ~%.0fs remaining)\n', k, K, elapsed, eta);
-  end
+  results{k} = r;
+  send(dq, k);
+end
 
+% Assemble results into mc struct
+for k = 1:K
+  r = results{k};
+  if isempty(r), continue; end
+  mc.FX_trans(k,:)      = r.FX_trans;      mc.FX_trans_BOM(k,:)  = r.FX_trans_BOM;
+  mc.FX_transl(k,:)     = r.FX_transl;     mc.FX_cc(k,:)         = r.FX_cc;
+  mc.FX_trans_CC(k,:)   = r.FX_trans_CC;   mc.FX_transl_CC(k,:)  = r.FX_transl_CC;
+  mc.FX_cc_total(k,:)   = r.FX_cc_total;   mc.FX_trans_CC_LY(k,:)= r.FX_trans_CC_LY;
+  mc.FX_transl_CC_LY(k,:)=r.FX_transl_CC_LY; mc.FX_cc_LY_total(k,:)=r.FX_cc_LY_total;
+  mc.M1_TI(k,:)    = r.M1_TI;    mc.M1_OCI(k,:)    = r.M1_OCI;
+  mc.M2w_TI(k,:)   = r.M2w_TI;   mc.M2w_OCI(k,:)   = r.M2w_OCI;
+  mc.M2m_TI(k,:)   = r.M2m_TI;   mc.M2m_OCI(k,:)   = r.M2m_OCI;
+  mc.M2q_TI(k,:)   = r.M2q_TI;   mc.M2q_OCI(k,:)   = r.M2q_OCI;
+  mc.M1_CC_TI(k,:)    = r.M1_CC_TI;    mc.M1_CC_OCI(k,:)    = r.M1_CC_OCI;
+  mc.CC_avg_TI(k,:)   = r.CC_avg_TI;   mc.CC_avg_OCI(k,:)   = r.CC_avg_OCI;
+  mc.CC_close_TI(k,:) = r.CC_close_TI; mc.CC_close_OCI(k,:) = r.CC_close_OCI;
 end
 
 fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
