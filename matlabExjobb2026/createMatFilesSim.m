@@ -646,6 +646,12 @@ c = table(cCostingData(:,1), cCostingData(:,2), cCostingData(:,3), cCostingData(
 %  SAVE ALL FILES
 %% ========================================================================
 
+% Ensure the output folder exists (git does not track empty directories,
+% so simulatedData/ may be absent after a fresh clone or pull).
+if ~exist('simulatedData', 'dir')
+  mkdir('simulatedData');
+end
+
 save(fullfile('simulatedData', 'costing'),              'c');
 save(fullfile('simulatedData', 'BOM'),                  'b', 'productOrderDate');
 save(fullfile('simulatedData', 'Sales'),                'sa');
