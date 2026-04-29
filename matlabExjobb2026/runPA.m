@@ -29,7 +29,7 @@ settings.currencies = {'AUD','CAD','CNY','EUR','GBP','SEK','USD','ZAR'};
 
 marketDataSet = 'reutersZero';
 
-if (~exist('dm', 'var'))
+if ~exist('dm', 'var') || ~isfield(dm, 'cName') || ~isfield(dm, 'dates')
   [dm] = createDataMarket(marketDataSet, settings);
 end
 
