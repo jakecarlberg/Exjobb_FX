@@ -410,8 +410,13 @@ for y = 1:nYears
     invoiceDate = mfgFinish + 7;
     arDueDate   = invoiceDate + custPay;
     arWd = weekday(arDueDate);
-    if arWd == 7, arDueDate = arDueDate - 1; end
-    if arWd == 1, arDueDate = arDueDate - 2; end
+    if arWd == 7, arDueDate = arDueDate + 2; end  % Sat -> Mon
+    if arWd == 1, arDueDate = arDueDate + 1; end  % Sun -> Mon
+    while arDueDate <= dm.dates(end)
+      idx = arDueDate - dm.dates(1) + 1;
+      if idx >= 1 && idx <= length(dm.indAllDates) && dm.indAllDates(idx) > 0, break; end
+      arDueDate = arDueDate + 1;
+    end
 
     % Track actuals
     actRevenueY = actRevenueY + revenueEUR;
@@ -459,8 +464,13 @@ for y = 1:nYears
       suppPay = max(1, round(suppPayMean + suppPayStd * randn()));
       apDue   = procDate + suppPay;
       apWd = weekday(apDue);
-      if apWd == 7, apDue = apDue - 1; end
-      if apWd == 1, apDue = apDue - 2; end
+      if apWd == 7, apDue = apDue + 2; end  % Sat -> Mon (ensures apDue > procDate)
+      if apWd == 1, apDue = apDue + 1; end  % Sun -> Mon
+      while apDue <= dm.dates(end)
+        idx = apDue - dm.dates(1) + 1;
+        if idx >= 1 && idx <= length(dm.indAllDates) && dm.indAllDates(idx) > 0, break; end
+        apDue = apDue + 1;
+      end
 
       % Prices
       compPrice       = alpha * compPriceInit(cj);
@@ -617,10 +627,10 @@ for j = 1:nComponents
   end
 end
 
-% Fix weekend due-dates in purchase orders
+% Fix weekend due-dates in purchase orders (forward to Monday, not back to Friday)
 wd = weekday(p.dueDate);
-p.dueDate(wd==7) = p.dueDate(wd==7) - 1;
-p.dueDate(wd==1) = p.dueDate(wd==1) - 2;
+p.dueDate(wd==7) = p.dueDate(wd==7) + 2;
+p.dueDate(wd==1) = p.dueDate(wd==1) + 1;
 
 % --- Dictionaries --------------------------------------------------------
 itemNumberDictionary    = cellstr(num2str((1:nComponents)', '%010.0f'));

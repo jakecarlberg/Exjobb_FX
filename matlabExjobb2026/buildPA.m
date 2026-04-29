@@ -68,35 +68,34 @@ for k=1:length(dc.itemNumbers)
   % Inventory procurement
   ind = find(dc.s.stockTransactionType == 25 & indPaRange & dc.s.jPurchaseOrder ~= 0);
   PProcurement = dc.procurementPrices{k}.state(dm);
-%   Pbar = dc.assets.assets{dc.assets.indPriceInventory(k)}.price(dm, dc);
-  
-  for i=1:length(ind)
-    j = dc.s.jPurchaseOrder(ind(i));
+
+  % Aggregate per date for validation: total bond NPV must equal total procurement cost.
+  % Per-order comparison is invalid because clsXiLastProcurement averages same-day orders.
+  dateNPV      = zeros(M, 1);
+  dateProcCost = zeros(M, 1);
+
+  for i = 1:length(ind)
+    j      = dc.s.jPurchaseOrder(ind(i));
     amount = dc.p.lineAmountOrderCurrency(j);
-    iDate = indAllDates(dc.s.entryDate(ind(i))-firstDate+1);
-    if (dc.p.dueDate(j)-firstDate+1 <= length(indAllDates))
-      iDueDate = indAllDates(dc.p.dueDate(j)-firstDate+1);
-    else
-      iDueDate = -1;
-    end
+    iDate  = indAllDates(dc.s.entryDate(ind(i)) - firstDate + 1);
 
     jBond = dc.assets.indBond(dc.p.jBond(j));
-    bond = dc.assets.assets{jBond};
-    [PBond] = bond.price(dm, dc);
-    
-    amountNPV = amount*PBond(iDate);
-    err = amountNPV - PProcurement(iDate) * dc.s.transactionQuantityBasicUM(ind(i));
-    % Use relative tolerance: clsXiLastProcurement averages same-day orders,
-    % so a small discrepancy is expected when multiple orders for the same
-    % component land on the same date.
-    relErr = abs(err) / max(abs(amountNPV), 1e-10);
-    if (relErr > 1E-2)
-      fprintf('%s %f %f (rel err %.4f%%)\n', datestr(dm.dates(iDate)), amountNPV, PProcurement(iDate) * dc.s.transactionQuantityBasicUM(ind(i)), 100*relErr);
+    bond  = dc.assets.assets{jBond};
+    PBond = bond.price(dm, dc);
+
+    dateNPV(iDate)      = dateNPV(iDate)      + amount * PBond(iDate);
+    dateProcCost(iDate) = dateProcCost(iDate) + PProcurement(iDate) * dc.s.transactionQuantityBasicUM(ind(i));
+    sBk(iDate) = sBk(iDate) + (PProcurement(iDate) - Pbar(iDate,kk)) * dc.s.transactionQuantityBasicUM(ind(i));
+  end
+
+  % Validate aggregate totals per date
+  for iDate = find(dateProcCost ~= 0)'
+    relErr = abs(dateNPV(iDate) - dateProcCost(iDate)) / max(abs(dateProcCost(iDate)), 1e-10);
+    if relErr > 1e-2
+      fprintf('[item %d, %s] Bond NPV %.0f vs proc cost %.0f (rel err %.2f%%)\n', ...
+        k, datestr(dm.dates(iDate)), dateNPV(iDate), dateProcCost(iDate), 100*relErr);
       error('Cash paid not consistent with procurement price');
     end
-    sBk(iDate) = sBk(iDate) + (PProcurement(iDate) - Pbar(iDate,kk)) * dc.s.transactionQuantityBasicUM(ind(i));
-    % AP short position is handled by the AP bond loop below (dc.ap.jBond).
-    % Procurement bonds (dc.p.jBond) are kept only for the pricing validation above.
   end
   
   [ii,jj,v] = find(xBk); % x contains sum of buy variables
