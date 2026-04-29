@@ -46,7 +46,7 @@ addpath(fullfile('IndustryMethods', 'Method2'));
 % =========================================================================
 % LOAD MARKET DATA ONCE  (fixed across MC iterations)
 % =========================================================================
-if ~exist('dm', 'var')
+if ~exist('dm', 'var') || ~isfield(dm, 'cName') || ~isfield(dm, 'dates')
   fprintf('Loading market data...\n');
   dm = createDataMarket(marketDataSet, settings);
   fprintf('Market data loaded: %d dates, %d currencies\n\n', ...

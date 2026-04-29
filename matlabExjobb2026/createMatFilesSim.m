@@ -106,22 +106,29 @@ end
 % Slice to simulation window
 iStart   = find(allYears == simStartYear);
 simYears = allYears(iStart:end);
+
+% Cap to years that actually have data in dm.dates (prevents out-of-range years
+% from triggering the yearStartIdx/yearEndIdx=1 fallback, which would place all
+% orders for that year on allDates(2) = the second business day of the PA period).
+[yr_end_dm, ~, ~] = datevec(dm.dates(end));
+simYears = simYears(simYears <= yr_end_dm);
 nYears   = length(simYears);
+iEnd     = iStart + nYears - 1;  % inclusive end index into allYears arrays
 
 % Slice all calibration arrays to match
-revenueGrowthPct = revenueGrowthPct(iStart:end);
-grossMarginPct   = grossMarginPct(iStart:end);
-inflationPct     = inflationPct(iStart:end);
+revenueGrowthPct = revenueGrowthPct(iStart:iEnd);
+grossMarginPct   = grossMarginPct(iStart:iEnd);
+inflationPct     = inflationPct(iStart:iEnd);
 
 % Revenue targets (compounded from 2005 base, sliced to sim window)
-targetRevenue = allRevenue(iStart:end);
+targetRevenue = allRevenue(iStart:iEnd);
 
 % COGS targets
 targetCOGS = targetRevenue .* (1 - grossMarginPct/100);
 
 % Selling prices per type per year (inflation-adjusted from 2005 base)
 allInflation = 2.0 * ones(1, length(allYears));  % full 2005-2025 inflation
-allInflation(iStart:end) = inflationPct;          % overwrite with sliced values
+allInflation(iStart:iEnd) = inflationPct;         % overwrite with sliced values
 allSellPrice = zeros(nTypes, length(allYears));
 for t = 1:nTypes
   allSellPrice(t, 1) = baseSellPriceEUR(t);
@@ -129,7 +136,7 @@ for t = 1:nTypes
     allSellPrice(t, y) = allSellPrice(t, y-1) * (1 + allInflation(y)/100);
   end
 end
-sellPriceByYear = allSellPrice(:, iStart:end);
+sellPriceByYear = allSellPrice(:, iStart:iEnd);
 
 % Sales currency indices
 saleCurIcur = zeros(1, length(saleCurNames));
@@ -320,12 +327,12 @@ for y = 1:nYears
   curAssignment = curAssignment(randperm(nOrdersY));
 
   % --- Manufacturing start dates: uniform random within year -------------
-  % Buffers only apply to edge years:
-  %   - First year: procurement must not predate dm.dates(1)
-  %   - Last year:  customer payment must not exceed dm.dates(end)
-  % Middle years can use the full year range because procurement/payment
-  % that spills into adjacent years is fine (dm.dates covers them).
+  % bufferStart: year 1 — procurement must not predate dm.dates(1)
+  % procBuf: all years — keep procurement within same calendar year to avoid
+  %   component inventory spikes at year boundaries (procLead can be up to 75 days)
+  % bufferEnd: last year — customer payment must not exceed dm.dates(end)
   bufferStart = procLeadMean + 3*procLeadStd + mfgMean + 3*mfgStd + 10;
+  procBuf     = procLeadMean + 3*procLeadStd;
   bufferEnd   = custPayMean  + 3*custPayStd  + 10;
 
   iYearStart = yearStartIdx(y);
@@ -334,7 +341,7 @@ for y = 1:nYears
   if y == 1
     iValidStart = iYearStart + round(bufferStart / 1.4);
   else
-    iValidStart = iYearStart;
+    iValidStart = iYearStart + procBuf;
   end
   if y == nYears
     iValidEnd = iYearEnd - round(bufferEnd / 1.4);
@@ -347,6 +354,11 @@ for y = 1:nYears
     iValidStart = iYearStart;
     iValidEnd   = iYearEnd;
   end
+
+  % Never allow mfgStart = allDates(1): that date equals firstDate in buildPA,
+  % which would incorrectly assign h0=1 (pre-period inventory) instead of xBI.
+  iValidStart = max(iValidStart, 2);
+  iValidEnd   = max(iValidEnd, iValidStart);
 
   bomStartInds = sort(randi([iValidStart, iValidEnd], 1, nOrdersY));
 
@@ -457,7 +469,7 @@ for y = 1:nYears
 
       % Procurement timing
       procLead  = max(5, round(procLeadMean + procLeadStd * randn()));
-      iProcDate = max(1, iMfgStart - procLead);
+      iProcDate = max(2, iMfgStart - procLead);  % never at allDates(1)=firstDate → avoids component h0
       procDate  = allDates(iProcDate);
 
       % Supplier payment
@@ -643,6 +655,12 @@ c = table(cCostingData(:,1), cCostingData(:,2), cCostingData(:,3), cCostingData(
 %% ========================================================================
 %  SAVE ALL FILES
 %% ========================================================================
+
+% Ensure the output folder exists (git does not track empty directories,
+% so simulatedData/ may be absent after a fresh clone or pull).
+if ~exist('simulatedData', 'dir')
+  mkdir('simulatedData');
+end
 
 save(fullfile('simulatedData', 'costing'),              'c');
 save(fullfile('simulatedData', 'BOM'),                  'b', 'productOrderDate');

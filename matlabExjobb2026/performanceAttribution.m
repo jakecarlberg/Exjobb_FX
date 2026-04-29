@@ -257,6 +257,29 @@ for k=1:Nc
   end
 end
 
+% dVhDdf restricted to AR/AP bonds only.
+% On the maturity/settlement day, PPrevTot = P(t-1) - dividend = 0, so dVhPtotdf
+% captures zero FX on that day. This term recovers the missing settlement-day FX:
+%   h_{t-1} × cf × Δf   (= face_value × Δfx on the payment date)
+% With no discounting, dFX_trans_EUR + dVhDdf_arApBonds = Method 1 TI exactly.
+% NOTE: dVhDdf_arApBonds is ADDED to dFX_trans_EUR below (thesis: no FX on
+% dividends → AR/AP maturity payments are commercial settlements, not dividends).
+% dVhDdf_other = dVhDdf − dVhDdf_arApBonds is the remaining "true" dividend FX;
+% for this portfolio it should be ≈ 0, confirming the thesis assumption.
+dVhDdf_arApBonds = zeros(M, 1);
+for k = 1:Nc
+  [ii_b, jj_b, v_b] = find(dp.D{k});
+  for i_b = 1:length(ii_b)
+    if ii_b(i_b) <= 1 || ~dp.arApBondMask(jj_b(i_b)), continue; end
+    dVhDdf_arApBonds(ii_b(i_b)) = dVhDdf_arApBonds(ii_b(i_b)) + ...
+      hI(ii_b(i_b)-1, jj_b(i_b)) * v_b(i_b) * ...
+      (dm.fx{k, iCurPortfolio}(ii_b(i_b)) - dm.fx{k, iCurPortfolio}(ii_b(i_b)-1));
+  end
+end
+% Remaining dividend FX after reclassifying AR/AP settlement payments to TI.
+% For this portfolio (dividends = AR/AP bond maturities only) this should be ~0.
+dVhDdf_other = dVhDdf - dVhDdf_arApBonds;
+
 dVdC = - sum(dC,2);
 
 dVhdPtf = zeros(M,1);
@@ -296,21 +319,33 @@ dVhdepsf(2:end) = sum(hI(1:end-1,:).*depsf(2:end,:),2);
 %     For USD/GBP bonds (AR/AP), Δf{k,EUR}≠0 → captures their FX revaluation. ✓
 %   ΔP^c_t = dVhdepsf: currency-price cross term.
 %     For EUR-priced BOM, Δf{EUR,EUR}=0 → zero contribution (auto-excluded). ✓
+%   dVhDdf_arApBonds: settlement-day FX on AR/AP bond maturity payments.
+%     On the payment date the bond price is zero (PPrevTot = 0), so the
+%     FX move on that final day would otherwise land in dVhDdf (dividend FX).
+%     The thesis assumes no FX on dividends; AR/AP maturity payments are
+%     commercial settlements, not dividends — so this term belongs in TI.
 %   NOTE: dVhdPxifMat FX columns capture BOM *price-gradient* FX sensitivity
 %   (∂P_EUR/∂f_{USD,EUR} ≠ 0 for clsPriceBomXi), NOT AR/AP revaluation.
 %   Using dVhPtotdf correctly restricts the benchmark to receivables/payables.
-dFX_trans_EUR = dVhPtotdf + dVhdepsf;
+dFX_trans_EUR = dVhPtotdf + dVhdepsf + dVhDdf_arApBonds;
 
 % Transactional FX — Bonds + BOM (full economic exposure):
 %   Adds dVhdPxifMat FX cols, which captures BOM price gradient sensitivity
 %   (∂P_EUR/∂f_{USD,EUR} ≠ 0 for clsPriceBomXi). Represents the forward USD
 %   exposure embedded in WIP from the order date onward, on top of AR/AP.
+%   Settlement-day FX (dVhDdf_arApBonds) is included for the same reason as above.
 iXifCols = 1:Nc^2;
-dFX_trans_BOM_EUR = dVhPtotdf + [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf;
+dFX_trans_BOM_EUR = dVhPtotdf + [0; full(sum(dVhdPxifMat(2:end, iXifCols), 2))] + dVhdepsf + dVhDdf_arApBonds;
 
 % Translate both variants to SEK at daily EUR/SEK rate
 dFX_trans     = dFX_trans_EUR     .* f_EUR_SEK;
 dFX_trans_BOM = dFX_trans_BOM_EUR .* f_EUR_SEK;
+
+% dFX_trans_inclSettl: settlement-day FX is now included in the main dFX_trans
+% series above (thesis: no FX on dividends → AR/AP settlement = transaction impact).
+% Kept as alias for backward compatibility.
+dFX_trans_inclSettl_EUR = dFX_trans_EUR;
+dFX_trans_inclSettl     = dFX_trans;
 
 % Translation FX (Eq. 4.46): daily change from SEK run minus EUR run converted to SEK
 % V_SEK comes from the second PAM run (c_p = SEK), isolating EUR/SEK movements
@@ -341,6 +376,7 @@ dr.hC        = hC;
 dr.V         = V_SEK;        % presentation currency (SEK) for reporting
 dr.V_EUR     = V_EUR;        % functional currency (EUR) — PAM base
 dr.V_SEK     = V_SEK;
+dr.VC        = VC;           % per-currency bucket value in native currency [M x Nc]
 dr.V_SEK_const        = V_SEK_const;
 dr.V_SEK_transl_const = V_SEK_transl_const;
 dr.V_SEK_LY           = V_SEK_LY;
@@ -349,7 +385,11 @@ dr.dFX_trans_EUR     = dFX_trans_EUR;
 dr.dFX_trans_BOM_EUR = dFX_trans_BOM_EUR;
 dr.dVdI      = dVdI;
 dr.dVhRdf    = dVhRdf;
-dr.dVhDdf    = dVhDdf;
+dr.dVhDdf              = dVhDdf;           % full dividend FX (decomposition identity)
+dr.dVhDdf_arApBonds    = dVhDdf_arApBonds; % AR/AP settlement-day FX (reclassified → TI)
+dr.dVhDdf_other        = dVhDdf_other;     % remaining dividend FX (≈0 for this portfolio)
+dr.dFX_trans_inclSettl = dFX_trans_inclSettl;  % alias: equals dFX_trans
+dr.FX_trans_inclSettl  = cumsum(dFX_trans_inclSettl);
 dr.dVdC      = dVdC;
 dr.dVhdPtf   = dVhdPtf;
 dr.dVhdPxifMat = dVhdPxifMat;
@@ -413,7 +453,9 @@ for p = 1:nPeriods
 end
 dr.periodDates = periodDates;
 
-% Decomposition check: residual should be ~zero (all in EUR)
+% Decomposition check: residual should be ~zero (all in EUR).
+% Uses the FULL dVhDdf (including dVhDdf_arApBonds) — this is the mathematical
+% identity and must not be modified. dVhDdf_other is only for reporting.
 dV = diff(V_EUR);
 dVd = dVdI + dVhRdf + dVhDdf + dVdC + dVhdPtf + dVhdPxif + dVhdPqf + dVhdepsaf + dVhdepsIf + dVhdepsPf + dVhPtotdf + dVhdepsf;
 dVd = dVd(2:end);
@@ -475,12 +517,15 @@ plot([dV-dVd])
 
 
 if doPlot
-  dVall = [dVdI dVhRdf dVhDdf dVdC dVhdPtf dVhdPxif dVhdPqf dVhdepsaf dVhdepsIf dVhdepsPf dVhPtotdf dVhdepsf];
+  % Use dVhDdf_other (= dVhDdf − dVhDdf_arApBonds) for the waterfall so the
+  % plot reflects the reclassification: AR/AP settlement FX is in dFX_trans,
+  % not in dividend FX. For this portfolio dVhDdf_other should be ≈ 0.
+  dVall = [dVdI dVhRdf dVhDdf_other dVdC dVhdPtf dVhdPxif dVhdPqf dVhdepsaf dVhdepsIf dVhdepsPf dVhPtotdf dVhdepsf];
   dVall = dVall(2:end,:);
   [~, ind] = sort(max(abs(dVall),[],1), 'descend');
   Vall = cumsum(dVall,1);
   nPlot = 7;
-  VallNames = {'dVdI' 'dVhRdf' 'dVhDdf' 'Procurement/Sales gain (dVdC)' 'dVhdPtf' 'Linear risk factors (dVhdPxif)' 'Quadratic risk factors (dVhdPqf)' 'dVhdepsaf' 'dVhdepsIf' 'dVhdepsPf' 'dVhPtotdf' 'dVhdepsf'};
+  VallNames = {'dVdI' 'dVhRdf' 'dVhDdf_other (non-bond dividend FX)' 'Procurement/Sales gain (dVdC)' 'dVhdPtf' 'Linear risk factors (dVhdPxif)' 'Quadratic risk factors (dVhdPqf)' 'dVhdepsaf' 'dVhdepsIf' 'dVhdepsPf' 'dVhPtotdf' 'dVhdepsf'};
   figure(2);
   plot(Vall(:,ind(1:nPlot)));
   legend(VallNames(ind(1:nPlot)), 'Location', 'Best');
