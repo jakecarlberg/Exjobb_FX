@@ -361,7 +361,7 @@ end
 % Dividend / cash sweep to parent (loaded from simulation output).
 % These are recorded in createMatFilesSim and saved to dividendEvents.mat.
 bs.dividendEUR = zeros(M, 1);
-divFile = fullfile('simulatedData', 'dividendEvents.mat');
+divFile = fullfile(dc.dataFolder, 'dividendEvents.mat');
 if isfile(divFile)
   S = load(divFile);
   if isfield(S, 'dividendEvents') && ~isempty(S.dividendEvents)

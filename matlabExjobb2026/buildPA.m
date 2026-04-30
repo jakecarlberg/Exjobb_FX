@@ -323,6 +323,24 @@ end
 
 dp.D = dc.assets.dividends(dm, dc);
 
+% Dividend sweeps to parent (same mechanic as buildBalanceSheet).
+% Reduces EUR cash position on each year-end sweep date.
+dp.dividendSweepEUR = zeros(M, 1);
+divFile = fullfile(dc.dataFolder, 'dividendEvents.mat');
+if isfile(divFile)
+  S = load(divFile);
+  if isfield(S, 'dividendEvents') && ~isempty(S.dividendEvents)
+    for kd = 1:size(S.dividendEvents, 1)
+      d   = S.dividendEvents(kd, 1);
+      amt = S.dividendEvents(kd, 2);
+      idx = indAllDates(max(1, min(d - firstDate + 1, length(indAllDates))));
+      if idx > 0
+        dp.dividendSweepEUR(idx) = dp.dividendSweepEUR(idx) + amt;
+      end
+    end
+  end
+end
+
 % p2 = assetdc.s.price(dm, dp);
 % 
 % sum(sum(abs(p2-dp.Pbar)))

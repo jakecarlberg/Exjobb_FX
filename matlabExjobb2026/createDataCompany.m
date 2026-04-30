@@ -216,6 +216,7 @@ for i=1:size(ap.iCur,1)
   end
 end
 
+dc.dataFolder = dataFolder;
 dc.p = p;
 dc.c = c;
 dc.s = s;

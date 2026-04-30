@@ -28,6 +28,9 @@ for k=1:Nc
   ind = ((dp.IC==k) & activeAssets);
   for i=2:M
     hC(i,k) = hC(i-1,k)*dm.R(i-1,k) + hI(i-1,:)*dp.D{k}(i,:)' + (dp.Pbar(i,ind)-dp.sSI(i,ind))*dp.xSI(i,ind)' - (dp.Pbar(i,ind)+dp.sBI(i,ind))*dp.xBI(i,ind)';
+    if k == iCurFunctional
+      hC(i,k) = hC(i,k) - dp.dividendSweepEUR(i);
+    end
   end
 end
 
