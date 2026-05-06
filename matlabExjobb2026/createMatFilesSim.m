@@ -396,7 +396,7 @@ for y = 1:nYears
     iMfgEnd   = min(nDates, iMfgStart + mfgDays);
     mfgStart  = allDates(iMfgStart);
     mfgFinish = allDates(iMfgEnd);
-    productOrderDate(productId) = mfgStart;
+    productOrderDate(productId) = Inf;  % will be set to min(procDate) across components below
 
     iDmMfgStart = getdmInd(mfgStart);
     iDmMfgEnd   = getdmInd(mfgFinish);
@@ -471,13 +471,17 @@ for y = 1:nYears
       bomRowId = bomRowId + 1;
 
       % Procurement timing
-      procLead  = max(5, round(procLeadMean + procLeadStd * randn()));
-      iProcDate = max(2, iMfgStart - procLead);  % never at allDates(1)=firstDate → avoids component h0
-      procDate  = allDates(iProcDate);
+      procLead         = max(5, round(procLeadMean + procLeadStd * randn()));
+      iProcDate        = max(2, iMfgStart - procLead);  % never at allDates(1)=firstDate → avoids component h0
+      procDate         = allDates(iProcDate);            % order date (PO placed)
+      procDeliveryDate = mfgStart;                       % delivery date (= mfgStart for now; decouple when safety stock introduced)
+
+      % Track earliest component order date for BOM start
+      productOrderDate(productId) = min(productOrderDate(productId), procDate);
 
       % Supplier payment
       suppPay = max(1, round(suppPayMean + suppPayStd * randn()));
-      apDue   = procDate + suppPay;
+      apDue   = procDeliveryDate + suppPay;
       apWd = weekday(apDue);
       if apWd == 7, apDue = apDue + 2; end  % Sat -> Mon (ensures apDue > procDate)
       if apWd == 1, apDue = apDue + 1; end  % Sun -> Mon
@@ -508,7 +512,7 @@ for y = 1:nYears
       p_cur{bomRowId}     = curStr;
       p_poNum1(bomRowId)  = poId;
       p_qty(bomRowId)     = qBuy;
-      p_accDate(bomRowId) = procDate;
+      p_accDate(bomRowId) = procDeliveryDate;
       p_dueDate(bomRowId) = apDue;
       p_amount(bomRowId)  = totalAmtProcCur;
 
@@ -519,7 +523,7 @@ for y = 1:nYears
       ap_invoiceNum(r1ap) = poId;  ap_txCode(r1ap) = 10;
       ap_fxAmt(r1ap)      = totalAmtProcCur;
       ap_cur{r1ap}        = curStr;
-      ap_accDate(r1ap)    = procDate;
+      ap_accDate(r1ap)    = procDeliveryDate;
       ap_dueDate(r1ap)    = apDue;
 
       ap_invoiceNum(r2ap) = poId;  ap_txCode(r2ap) = 20;
@@ -533,7 +537,7 @@ for y = 1:nYears
       s_itemNum(stockRowId) = cj;
       s_txType(stockRowId)  = 25;
       s_qty(stockRowId)     = qBuy;
-      s_entDate(stockRowId) = procDate;
+      s_entDate(stockRowId) = procDeliveryDate;
       s_ordNum(stockRowId)  = poId;
 
       % Stock transaction: manufacturing consumption (type 11)
