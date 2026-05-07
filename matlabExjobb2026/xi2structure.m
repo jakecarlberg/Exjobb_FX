@@ -8,7 +8,12 @@ if(nargin == 2)
 end
 
 if (version == 2)
-  dc.xi(2:end,:) = dc.xi(1:end-1,:);  
+  % Row-by-row to avoid the [M x N_xi] temporary that
+  % `dc.xi(2:end,:) = dc.xi(1:end-1,:)` would allocate.
+  % Walk bottom-up so we don't overwrite a row before reading it.
+  for i = size(dc.xi,1):-1:2
+    dc.xi(i,:) = dc.xi(i-1,:);
+  end
 end
 
 % Copy values in xi to all duplicate copies in dm and dc
@@ -50,10 +55,19 @@ for k=1:nc
     dxi = dm.xiPC{k} - xiPC{k};
     dm.d{k} = dm.d{k}.*exp(dxi*dm.negIntE{k}');
   elseif (version == 2)
-    dm.d{k}(2:end,:) = dm.d{k}(1:end-1,:);    
+    % Row-by-row to avoid the [M x nTenors] temporary that
+    % `dm.d{k}(2:end,:) = dm.d{k}(1:end-1,:)` would allocate.
+    % Walk bottom-up so we don't overwrite a row before reading it.
+    for i = size(dm.d{k},1):-1:2
+      dm.d{k}(i,:) = dm.d{k}(i-1,:);
+    end
   elseif (version == 3)
-    dxi = dm.xiPC{k}(2:end,:) - dm.xiPC{k}(1:end-1,:);
-    dm.d{k}(2:end,:) = dm.d{k}(1:end-1,:).*exp(dxi*dm.negIntE{k}');
+    % Row-by-row to avoid large [M x nTenors] temporary allocation
+    negIntE_k = dm.negIntE{k}';  % transpose once: [nEigs x nTenors]
+    for i = 2:size(dm.d{k},1)
+      dxi_i = dm.xiPC{k}(i,:) - dm.xiPC{k}(i-1,:);  % [1 x nEigs]
+      dm.d{k}(i,:) = dm.d{k}(i-1,:) .* exp(dxi_i * negIntE_k);
+    end
   end
 end
 

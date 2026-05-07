@@ -74,6 +74,13 @@ for k=1:length(dc.itemNumbers)
   dateNPV      = zeros(M, 1);
   dateProcCost = zeros(M, 1);
 
+  % iCurInv = pricing currency of this inventory asset (kk = global asset
+  % index because inventory items are added first in createDataCompany).
+  % Now that inventory is locked at receipt-date FX in EUR, iCurInv = EUR.
+  % Convert the bond NPV (in proc currency) to iCurInv at the receipt-date
+  % FX so the consistency check stays apples-to-apples.
+  iCurInv = dc.assets.iCurAssets(kk);
+
   for i = 1:length(ind)
     j      = dc.s.jPurchaseOrder(ind(i));
     amount = dc.p.lineAmountOrderCurrency(j);
@@ -83,7 +90,10 @@ for k=1:length(dc.itemNumbers)
     bond  = dc.assets.assets{jBond};
     PBond = bond.price(dm, dc);
 
-    dateNPV(iDate)      = dateNPV(iDate)      + amount * PBond(iDate);
+    iCurProc = dc.p.iCur(j);
+    fxToInv  = dm.fx{iCurProc, iCurInv}(iDate);   % proc → inventory currency at receipt
+
+    dateNPV(iDate)      = dateNPV(iDate)      + amount * PBond(iDate) * fxToInv;
     dateProcCost(iDate) = dateProcCost(iDate) + PProcurement(iDate) * dc.s.transactionQuantityBasicUM(ind(i));
     sBk(iDate) = sBk(iDate) + (PProcurement(iDate) - Pbar(iDate,kk)) * dc.s.transactionQuantityBasicUM(ind(i));
   end
@@ -164,90 +174,138 @@ for k=1:length(dc.itemNumbers)
 
 end
 
-for k=1:length(dc.productNumbers)
-  % Only consider dates within dm.dates
+% =========================================================================
+% Component BOMs: forward purchase commitment per PO.
+%   Bought at procDate (PO placed), sold at procDeliveryDate (component
+%   arrives). After delivery the AP bond carries the cost-side FX as the
+%   recognised IAS 21 monetary liability — see AP-bond block below.
+% =========================================================================
+hasComponentBOM = ismember('jComponentBOM', dc.b.Properties.VariableNames);
+if hasComponentBOM
+  for c = 1:height(dc.b)
+    idComp = dc.b.jComponentBOM(c);
+    if idComp == 0, continue; end
 
-  % Model BOM
+    poNum = dc.b.purchaseOrderNumber(c);
+    poRow = find(dc.p.purchaseOrderNumber == poNum);
+    if length(poRow) ~= 1, continue; end
 
+    procDateVal  = dc.p.orderDate(poRow);
+    procDelivery = dc.p.accountingDate(poRow);
+
+    % Skip if entirely outside PA range
+    if procDateVal > lastDate || procDelivery <= firstDate, continue; end
+
+    kh = dc.assets.indManufactured(idComp);
+
+    if procDateVal <= firstDate
+      h0(kh) = 1;
+    else
+      h0(kh) = 0;
+      iBuyDate = indAllDates(procDateVal - firstDate + 1);
+      iiB = [iiB; iBuyDate];
+      jjB = [jjB; kh];
+      xBv = [xBv; 1];
+      sBv = [sBv; -Pbar(iBuyDate, kh)];   % effective buy price = 0
+    end
+
+    if procDelivery <= lastDate
+      iSellDate = indAllDates(procDelivery - firstDate + 1);
+      iiS = [iiS; iSellDate];
+      jjS = [jjS; kh];
+      xSv = [xSv; 1];
+      sSv = [sSv; 0];                     % BOM has paid out, sell at 0
+    end
+  end
+end
+
+% =========================================================================
+% Product BOM: forward sale commitment per product.
+%   Bought at productOrderDate (customer commitment), sold at invoiceDate
+%   (product delivered to buyer). After invoice the AR bond carries the
+%   revenue-side FX as the recognised IAS 21 monetary asset.
+% =========================================================================
+hasProductBOM = isfield(dc, 'productBomId');
+for k = 1:length(dc.productNumbers)
   ii = find(dc.sa.itemNumber == dc.productNumbers(k));
   if (length(ii) ~= 1)
-    fprintf('Could not find a unique invoice for product %d\n', dc.productNumbers(i)); error('Exiting');
+    fprintf('Could not find a unique invoice for product %d\n', dc.productNumbers(k)); error('Exiting');
   end
   invoiceNumber = dc.sa.invoiceNumber(ii);
 
   jj = find(dc.a.transactionCode == 10 & dc.a.invoiceNumber == invoiceNumber);
   kk = find(dc.a.transactionCode == 20 & dc.a.invoiceNumber == invoiceNumber);
   if (length(jj) ~= 1 || length(kk) ~= 1)
-    fprintf('Could not find accounts receiveable for invoice %d\n', invoiceNumber); error('Exiting');
-  end
-  
-  if (dc.productOrderDate(k) > lastDate || dc.a.accountingDate(kk) <= firstDate)
-    continue; % Product not active during performance attribution period - skip
+    fprintf('Could not find accounts receivable for invoice %d\n', invoiceNumber); error('Exiting');
   end
 
-  
-  kh = dc.assets.indManufactured(k);
-  if (dc.productOrderDate(k) <= firstDate) % First row should not be used
-    h0(kh) = 1;
-  else
-    h0(kh) = 0;
-    
-    iDate = indAllDates(dc.productOrderDate(k)-firstDate+1);
-    
-    % Buy product (BOM)
-    iiB = [iiB ; iDate];
-    jjB = [jjB ; kh];
-    xBv = [xBv ; 1];
-    sBv = [sBv ; -Pbar(iDate,kh)]; % Buys asset to price zero for BOM (this is the ex ante revenue)
+  if (dc.productOrderDate(k) > lastDate || dc.a.accountingDate(kk) <= firstDate)
+    continue;  % Product entirely outside PA period — skip
   end
-  
-  if (dc.a.accountingDate(jj) <= lastDate) % Produciton of BOM has finished and delivered during PA period
-    
-    if (dc.a.accountingDate(jj) < dc.productOrderDate(k))
-      fprintf('Product %s was ordered on date %s but delivered on date %s\n', dc.productNumberDictionary{dc.productNumbers(k)}, datestr(dc.productOrderDate(k)), datestr(dc.a.accountingDate(jj)));
+
+  if (dc.a.accountingDate(jj) < dc.productOrderDate(k))
+    fprintf('Product %s was ordered on date %s but delivered on date %s\n', ...
+      dc.productNumberDictionary{dc.productNumbers(k)}, ...
+      datestr(dc.productOrderDate(k)), datestr(dc.a.accountingDate(jj)));
+  end
+
+  if hasProductBOM && k <= length(dc.productBomId) && dc.productBomId(k) > 0
+    kh = dc.assets.indManufactured(dc.productBomId(k));
+
+    % Product BOM is bought at mfgStart (= when manufacturing begins, treated
+    % as the customer-order date in this make-to-order model). mfgStart per
+    % product = min(b.reportingDate) over the product's BOM rows.
+    mfgStartForProduct = min(dc.b.reportingDate(dc.b.product == dc.productNumbers(k)));
+
+    if (mfgStartForProduct <= firstDate)
+      h0(kh) = 1;
+    else
+      h0(kh) = 0;
+      iDate = indAllDates(mfgStartForProduct - firstDate + 1);
+      iiB = [iiB; iDate];
+      jjB = [jjB; kh];
+      xBv = [xBv; 1];
+      sBv = [sBv; -Pbar(iDate, kh)];      % effective buy price = 0
     end
-    
-    iDate = indAllDates(dc.a.accountingDate(jj)-firstDate+1);
+
+    if (dc.a.accountingDate(jj) <= lastDate)
+      iDate = indAllDates(dc.a.accountingDate(jj) - firstDate + 1);
+      iiS = [iiS; iDate];
+      jjS = [jjS; kh];
+      xSv = [xSv; 1];
+      sSv = [sSv; 0];                     % BOM has paid out, sell at 0
+    end
+  end
+
+  % AR bond: bought at invoiceDate, sold at arDueDate. (Independent of
+  % whether a Product BOM exists — captures the IAS 21 receivable phase.)
+  if (dc.a.accountingDate(jj) <= lastDate)
+    iDate = indAllDates(dc.a.accountingDate(jj) - firstDate + 1);
     jBond = dc.assets.indBond(dc.a.jBond(jj));
-    iCurBond = dc.assets.assets{jBond}.iCurBond;
-    iCurAsset = dc.assets.iCurAssets(kh);
-    
     sellingPrice = dc.a.foreignCurrencyAmount(jj);
 
-    % Sell product (BOM)
-    iiS = [iiS ; iDate];
-    jjS = [jjS ; kh];
-    xSv = [xSv ; 1];
-%     sSv = [sSv ; Pbar(iDate,kh) - sellingPrice*Pbar(iDate, jBond)*dm.fx{iCurBond, iCurAsset}(iDate)];
-    sSv = [sSv ; 0]; % When it has zero value
-    
-    % Buy bond (cancel out selling of BOM)
-    
-    iiB = [iiB ; iDate];
-    jjB = [jjB ; jBond];
-    xBv = [xBv ; sellingPrice];
-    sBv = [sBv ; 0];
+    iiB = [iiB; iDate];
+    jjB = [jjB; jBond];
+    xBv = [xBv; sellingPrice];
+    sBv = [sBv; 0];
 
-    if (dc.a.accountingDate(kk) <= lastDate) % Bond matures - sell bond
-      jDate = indAllDates(dc.a.accountingDate(kk)-firstDate+1);
-      
-      iiS = [iiS ; jDate];
-      jjS = [jjS ; jBond];
-      xSv = [xSv ; sellingPrice];
-      sSv = [sSv ; 0];
-      
+    if (dc.a.accountingDate(kk) <= lastDate)
+      jDate = indAllDates(dc.a.accountingDate(kk) - firstDate + 1);
+      iiS = [iiS; jDate];
+      jjS = [jjS; jBond];
+      xSv = [xSv; sellingPrice];
+      sSv = [sSv; 0];
     end
-    
   end
-
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % AP bonds: accounts payable (thesis Eq. 4.39)
-% AP is a SHORT bond position: sell bond when AP is created (order placed),
+% AP is a SHORT bond position: sell bond when AP is created (delivery date),
 % buy bond back when AP is settled (payment made).
-% Note: in the simulated data, order date == delivery date, so these AP bonds
-% span the same period as the procurement bonds above. In real data they differ.
+% AP bond spans procDeliveryDate (= mfgStart) → apDue.
+% The procurement lead-time window (procDate → mfgStart) is covered by the
+% BOM asset, which starts at productOrderDate = min(procDate) across components.
 
 apOrderNums = unique(dc.ap.invoiceNumber);
 for i = 1:length(apOrderNums)

@@ -49,8 +49,8 @@ classdef clsAssets < handle
         end
         M = length(dm.dates);
         p = zeros(M,N);
-        g = cell(M,N);
-        H = cell(M,N);
+        if nargout >= 2, g = cell(M,N); else, g = {}; end
+        if nargout >= 3, H = cell(M,N); else, H = {}; end
         ind = [obj.indPriceInventory obj.indPriceShrinkage obj.indManufactured obj.indBond];
         for j=1:length(ind)
           if (~activeAssets(j))
