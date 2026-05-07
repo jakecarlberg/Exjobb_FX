@@ -38,15 +38,37 @@ iCurFunctional  = find(ismember(dm.cName, curFunctional));
 simStartYear = 2007;  % Data back to 2005 when FX/yield data is fully extended
 
 % --- Revenue: start value and annual growth rates (Tables 4.3-4.4) -------
-%            2005  2006  2007  2008  2009  2010  2011  2012  2013  2014
-%            2015  2016  2017  2018  2019  2020  2021  2022  2023  2024  2025
-startRevenue    = 500e6;   % EUR, year 2005 (base year for compounding)
-revenueGrowthPct = [NaN, 18.2, 17.5,  4.2, -25.1, 10.8, 22.1, -3.5, -1.2,  0.8, ...
-                   -8.6, -6.1, 12.0, 16.5,  -0.8,-13.2, 17.0, 31.1, 12.6, -2.9, -1.8];
+%   allYears = 2005:2025 (21 elements); index 1=2005, 2=2006, 3=2007, ..., 21=2025
+%   2005 (index 1): base year — growth = NaN, GM kept as placeholder
+%   2006 (index 2): no Sandvik growth data (no 2005 base) — keep placeholder
+%   2007-2025 (indices 3-21): loaded from Sandvik annual report data below
+startRevenue     = 500e6;   % EUR, year 2005 (base year for compounding)
+revenueGrowthPct = [NaN, 18.2, NaN(1,19)];  % 2005-2006 hardcoded; 2007-2025 loaded below
+grossMarginPct   = [42.5, 43.1, NaN(1,19)]; % 2005-2006 hardcoded; 2007-2025 loaded below
 
-% --- Gross margin per year (%) (Tables 4.3-4.4) -------------------------
-grossMarginPct = [42.5, 43.1, 43.0, 41.8, 36.2, 39.5, 41.0, 40.1, 39.8, 39.5, ...
-                  41.0, 40.8, 40.2, 41.5, 41.2, 40.8, 42.8, 40.4, 41.1, 40.0, 40.6];
+% --- Load actual Sandvik revenue growth and gross margin (2007-2025) ------
+% File: marketData/202605_Sandvik_Data.xlsx, sheet: Income Statement
+% Column layout: col 1 = field name, col 2 = 2006, col 3 = 2007, ..., col 21 = 2025
+% allYears index maps directly to Excel column (both use 2005 as offset base)
+sandvikFile = fullfile('marketData', '202605_Sandvik_Data.xlsx');
+if isfile(sandvikFile)
+  raw = readcell(sandvikFile, 'Sheet', 'Income Statement');
+  revRow = find(cellfun(@(x) ischar(x) && strcmp(x, 'Revenue growth, %'), raw(:,1)));
+  gmRow  = find(cellfun(@(x) ischar(x) && strcmp(x, 'Gross Margin'),      raw(:,1)));
+  if ~isempty(revRow) && ~isempty(gmRow)
+    for col = 3:21  % col 3 = 2007, col 21 = 2025 (matches allYears index)
+      v = raw{revRow, col};
+      if isnumeric(v) && ~isnan(v), revenueGrowthPct(col) = v * 100; end
+      v = raw{gmRow, col};
+      if isnumeric(v) && ~isnan(v), grossMarginPct(col)   = v * 100; end
+    end
+    fprintf('Loaded Sandvik revenue growth and gross margin (2007-2025) from %s\n', sandvikFile);
+  else
+    error('Could not find Revenue growth or Gross Margin rows in %s', sandvikFile);
+  end
+else
+  error('Sandvik data file not found: %s\nPlace 202605_Sandvik_Data.xlsx in the marketData/ folder.', sandvikFile);
+end
 
 % --- Inflation per year (%) - placeholder, update with actual data -------
 inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
