@@ -77,8 +77,8 @@ inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 % Normal mode:  ~100-170 orders/year  (realistic volume, slow if reused for MC)
 % Test mode:    ~20-30 orders/year    (for manual verification — alpha-calibration
 %                                      still works, but transactions are tractable)
-baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
-% baseSellPriceEUR = [5000000, 25000000, 100000000];      % TEST MODE (×5 priser → ~20 orders/år)
+% baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
+baseSellPriceEUR = [5000000, 25000000, 100000000];      % TEST MODE (×5 priser → ~20 orders/år)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -265,13 +265,15 @@ b_product    = zeros(nTotalPO, 1);  b_compNum     = zeros(nTotalPO, 1);
 b_qty        = zeros(nTotalPO, 1);  b_refOrder    = zeros(nTotalPO, 1);
 b_repDate    = zeros(nTotalPO, 1);  b_costPrice   = zeros(nTotalPO, 1);
 b_finishDate = zeros(nTotalPO, 1);  b_costPriceVal= zeros(nTotalPO, 1);
+b_poNum      = zeros(nTotalPO, 1);  % stable link from BOM row → PO row
 
 % Purchase orders
-p_poNum   = zeros(nTotalPO, 1);  p_itemNum = zeros(nTotalPO, 1);
-p_txCode  = zeros(nTotalPO, 1);  p_cur     = cell(nTotalPO, 1);
-p_poNum1  = zeros(nTotalPO, 1);  p_qty     = zeros(nTotalPO, 1);
-p_accDate = zeros(nTotalPO, 1);  p_dueDate = zeros(nTotalPO, 1);
-p_amount  = zeros(nTotalPO, 1);
+p_poNum     = zeros(nTotalPO, 1);  p_itemNum  = zeros(nTotalPO, 1);
+p_txCode    = zeros(nTotalPO, 1);  p_cur      = cell(nTotalPO, 1);
+p_poNum1    = zeros(nTotalPO, 1);  p_qty      = zeros(nTotalPO, 1);
+p_orderDate = zeros(nTotalPO, 1);  % NEW: PO placed (= procDate)
+p_accDate   = zeros(nTotalPO, 1);  p_dueDate  = zeros(nTotalPO, 1);
+p_amount    = zeros(nTotalPO, 1);
 
 % Stock transactions (procurement + consumption = 2 * nTotalPO)
 nStockRows = 2 * nTotalPO;
@@ -519,25 +521,31 @@ for y = 1:nYears
       totalAmtProcCur = compPrice * qBuy;
 
       % BOM row
+      % actualFinishDate = procDeliveryDate (= mfgStart): each component BOM
+      % covers only the shipping window (procDate → mfgStart). After delivery
+      % the AP bond takes over the cost-side FX tracking. The Component BOM
+      % carries a single negative cash flow at procDeliveryDate in proc currency.
       b_product(bomRowId)     = productId;
       b_compNum(bomRowId)     = cj;
       b_qty(bomRowId)         = qBuy;
       b_refOrder(bomRowId)    = 0;
       b_repDate(bomRowId)     = mfgStart;
       b_costPrice(bomRowId)   = compPrice;
-      b_finishDate(bomRowId)  = mfgFinish;
+      b_finishDate(bomRowId)  = procDeliveryDate;  % delivery (= mfgStart)
       b_costPriceVal(bomRowId)= qBuy * compPrice;
+      b_poNum(bomRowId)       = poId;              % link BOM row → PO
 
       % Purchase order
-      p_poNum(bomRowId)   = poId;
-      p_itemNum(bomRowId) = cj;
-      p_txCode(bomRowId)  = 40;
-      p_cur{bomRowId}     = curStr;
-      p_poNum1(bomRowId)  = poId;
-      p_qty(bomRowId)     = qBuy;
-      p_accDate(bomRowId) = procDeliveryDate;
-      p_dueDate(bomRowId) = apDue;
-      p_amount(bomRowId)  = totalAmtProcCur;
+      p_poNum(bomRowId)     = poId;
+      p_itemNum(bomRowId)   = cj;
+      p_txCode(bomRowId)    = 40;
+      p_cur{bomRowId}       = curStr;
+      p_poNum1(bomRowId)    = poId;
+      p_qty(bomRowId)       = qBuy;
+      p_orderDate(bomRowId) = procDate;          % PO placed (Component BOM start)
+      p_accDate(bomRowId)   = procDeliveryDate;  % delivery / AP bond start
+      p_dueDate(bomRowId)   = apDue;             % AP bond maturity
+      p_amount(bomRowId)    = totalAmtProcCur;
 
       % Accounts payable (2 rows per PO)
       r1ap = 2*(poId-1)+1;
@@ -606,12 +614,13 @@ b_product    = b_product(1:bomRowId);     b_compNum     = b_compNum(1:bomRowId);
 b_qty        = b_qty(1:bomRowId);         b_refOrder    = b_refOrder(1:bomRowId);
 b_repDate    = b_repDate(1:bomRowId);     b_costPrice   = b_costPrice(1:bomRowId);
 b_finishDate = b_finishDate(1:bomRowId);  b_costPriceVal= b_costPriceVal(1:bomRowId);
+b_poNum      = b_poNum(1:bomRowId);
 
-p_poNum   = p_poNum(1:bomRowId);    p_itemNum = p_itemNum(1:bomRowId);
-p_txCode  = p_txCode(1:bomRowId);   p_cur     = p_cur(1:bomRowId);
-p_poNum1  = p_poNum1(1:bomRowId);   p_qty     = p_qty(1:bomRowId);
-p_accDate = p_accDate(1:bomRowId);  p_dueDate = p_dueDate(1:bomRowId);
-p_amount  = p_amount(1:bomRowId);
+p_poNum     = p_poNum(1:bomRowId);     p_itemNum  = p_itemNum(1:bomRowId);
+p_txCode    = p_txCode(1:bomRowId);    p_cur      = p_cur(1:bomRowId);
+p_poNum1    = p_poNum1(1:bomRowId);    p_qty      = p_qty(1:bomRowId);
+p_orderDate = p_orderDate(1:bomRowId); p_accDate  = p_accDate(1:bomRowId);
+p_dueDate   = p_dueDate(1:bomRowId);   p_amount   = p_amount(1:bomRowId);
 
 nProducts = productId;
 
@@ -638,13 +647,13 @@ productOrderDate = productOrderDate(1:nProducts);
 
 % --- Build tables --------------------------------------------------------
 
-b = table(b_product, b_compNum, b_qty, b_refOrder, b_repDate, b_costPrice, b_finishDate, b_costPriceVal, ...
+b = table(b_product, b_compNum, b_qty, b_refOrder, b_repDate, b_costPrice, b_finishDate, b_costPriceVal, b_poNum, ...
   'VariableNames', {'product','componentNumber','quantity','referenceOrderNumber', ...
-                    'reportingDate','costPrice','actualFinishDate','CostPriceValue'});
+                    'reportingDate','costPrice','actualFinishDate','CostPriceValue','purchaseOrderNumber'});
 
-p = table(p_poNum, p_itemNum, p_txCode, p_cur, p_poNum1, p_qty, p_accDate, p_dueDate, p_amount, ...
+p = table(p_poNum, p_itemNum, p_txCode, p_cur, p_poNum1, p_qty, p_orderDate, p_accDate, p_dueDate, p_amount, ...
   'VariableNames', {'purchaseOrderNumber','itemNumber','transactionCode','currency', ...
-                    'purchaseOrderNumber_1','invoicedQuantityAlternateUM','accountingDate','dueDate','lineAmountOrderCurrency'});
+                    'purchaseOrderNumber_1','invoicedQuantityAlternateUM','orderDate','accountingDate','dueDate','lineAmountOrderCurrency'});
 
 sa = table(sa_invoiceNum, sa_itemNum, sa_fxAmt, sa_localAmt, sa_costPrice, sa_cur, ...
   'VariableNames', {'invoiceNumber','itemNumber','foreignCurrencyAmount','lineAmountLocalCurrency','costPrice','currency'});

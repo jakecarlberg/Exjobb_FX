@@ -23,13 +23,39 @@ iCurFunctional   = find(ismember(dm.cName, 'EUR'));
 iCurPresentation = find(ismember(dm.cName, 'SEK'));
 iCurPortfolio    = iCurFunctional;   % all decomposition terms in EUR
 
-% Compute currency holdings
-for k=1:Nc
-  ind = ((dp.IC==k) & activeAssets);
-  for i=2:M
+% Compute currency holdings.
+% Loop order: i outer, k inner — so that after all currencies are updated
+% for timestep i, we can sweep foreign cash to EUR at today's spot rate.
+% This mirrors buildBalanceSheet.m: AR/AP bond maturities pay out in their
+% native currency, then immediately convert to EUR at the day's spot rate.
+% Done at spot ⇒ no FX gain/loss is recognised at the conversion instant
+% (X foreign-cur exchanges for X·f EUR at the same rate). The conversion
+% just removes foreign cash from the books, eliminating the unrealistic
+% multi-year accumulation of un-converted foreign cash that was inflating
+% PAM Translation FX above IFRS OCI.
+indByCurrency = cell(Nc, 1);
+for k = 1:Nc
+  indByCurrency{k} = ((dp.IC==k) & activeAssets);
+end
+
+for i = 2:M
+  for k = 1:Nc
+    ind = indByCurrency{k};
     hC(i,k) = hC(i-1,k)*dm.R(i-1,k) + hI(i-1,:)*dp.D{k}(i,:)' + (dp.Pbar(i,ind)-dp.sSI(i,ind))*dp.xSI(i,ind)' - (dp.Pbar(i,ind)+dp.sBI(i,ind))*dp.xBI(i,ind)';
     if k == iCurFunctional
       hC(i,k) = hC(i,k) - dp.dividendSweepEUR(i);
+    end
+  end
+
+  % Foreign-cash sweep: convert any non-EUR cash to EUR at today's spot.
+  % Triggered automatically on every AR/AP/BOM-bond maturity since those
+  % are the only days when non-EUR cash flows occur in our portfolio.
+  for k = 1:Nc
+    if k == iCurFunctional, continue; end
+    if hC(i,k) ~= 0
+      hC(i, iCurFunctional) = hC(i, iCurFunctional) ...
+                            + hC(i,k) * dm.fx{k, iCurFunctional}(i);
+      hC(i,k) = 0;
     end
   end
 end
@@ -153,18 +179,16 @@ V = V_EUR;
 
 epsP = dp.Pbar - dp.P;
 depsP = [zeros(1,N) ; epsP(2:end,:)-epsP(1:end-1,:)];
+clear epsP;
 
 dmPrev = dm; dcPrev = dc;
 [dmPrev, dcPrev] = xi2structure(dmPrev, dcPrev, 2);
 % Prices only (no g/H) — avoids storing [M×N] cell arrays in memory
 [PPrev] = dc.assets.price(dmPrev, dcPrev, activeAssets);
 
-dmSignificant = dm; dcSignificant = dc;
-[dmSignificant, dcSignificant] = xi2structure(dmSignificant, dcSignificant, 3);
-[PSignificant] = dc.assets.price(dmSignificant, dcSignificant, activeAssets);
-clear dmSignificant dcSignificant;
-
-depsI = dp.P - PSignificant;
+% depsI (idiosyncratic pricing error) is not part of PAM TI metrics.
+% Skip the memory-intensive version-3 xi2structure to avoid OOM on large datasets.
+depsI = zeros(M, N);
 clear PSignificant;
 
 PPrevTot = [ones(size(dp.P(1,:)))*NaN ; dp.P(1:end-1,:)];

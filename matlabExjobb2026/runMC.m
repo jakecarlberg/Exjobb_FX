@@ -116,11 +116,15 @@ tStart = tic;
 % Collect per-iteration results in a cell array (required for parfor)
 results = cell(K, 1);
 
-% Progress counter via DataQueue (parfor-safe)
-dq    = parallel.pool.DataQueue;
+% Progress counter via DataQueue (parfor-safe; falls back gracefully without PCT)
 nDone = 0;
-afterEach(dq, @(~) fprintf('  %4d / %4d  (%.0fs elapsed)\n', ...
-  nDone + 1, K, toc(tStart)));
+try
+  dq = parallel.pool.DataQueue;
+  afterEach(dq, @(~) fprintf('  %4d / %4d  (%.0fs elapsed)\n', ...
+    nDone + 1, K, toc(tStart)));
+catch
+  dq = [];  % no Parallel Computing Toolbox — progress not printed per-iteration
+end
 
 parfor k = 1:K
   % Each parallel worker writes to its own subfolder to avoid file conflicts
