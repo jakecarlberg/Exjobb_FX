@@ -303,12 +303,18 @@ for i=1:length(dc.itemNumbers)
       purchaceQuantity = dc.p.invoicedQuantityAlternateUM(j);
       iCurPurchase = dc.p.iCur(j);
       
-      if (length(unique(iCurPurchase))>1)
-        iCurXi = find(ismember(dm.cName, curFunctional)); % Multiple procurement currencies => use functional currency
-      else
-        iCurXi = iCurPurchase(1); % Only one procurement currency - Use this for pricing
-      end
-        
+      % Lock inventory cost to functional currency (EUR) at the receipt-date
+      % FX rate, implementing IAS 21 historical-cost treatment for
+      % non-monetary items. clsXiLastProcurement converts each procurement
+      % event to EUR using the FX rate on its own datesBuy (the receipt
+      % date) when iCurPrice = EUR. The resulting weighted-average xiP is
+      % in EUR locked at receipt — it does NOT float with current FX.
+      % After this, clsPriceStochastic with iCurXi = iCurPrice = EUR gives
+      % p = xiP × fx{EUR,EUR} = xiP (no further FX adjustment), and the
+      % FX gradient ∂p/∂fx{EUR,EUR} produces zero translation contribution
+      % since fx{EUR,EUR} ≡ 1 always.
+      iCurXi = find(ismember(dm.cName, curFunctional));
+
       % Random variable
       rvLastProcurement = clsXiLastProcurement(datesBuy, datesPay, purchaseAmount, purchaceQuantity, iCurPurchase, iCurXi);
     else
@@ -372,30 +378,66 @@ end
 
 dc.productOrderDate = productOrderDate;
 
+% Per-BOM-row asset id for the Component BOM (DeterministicCashFlows mode).
+% A Component BOM is one forward purchase commitment per PO: from procDate
+% (PO placed) to procDeliveryDate (component arrives). After delivery, the
+% AP bond carries the cost-side FX as the recognised IAS 21 monetary item.
+% Stored as a type-specific id (1-based index into dc.assets.indManufactured).
+dc.b.jComponentBOM   = zeros(height(dc.b), 1);
+dc.productBomId      = zeros(length(dc.productNumbers), 1);
+
 fprintf('Done: BOM\n');
 for i=1:length(dc.productNumbers)
   iCurPrice = find(ismember(dm.cName, curFunctional));
   %   dc.assets.add(clsPriceZero(iCurPrice), AssetType.itemManufactured);
   if (strcmp(settings.bomPricing,'DeterministicCashFlows'))
-    bom = dc.b(dc.b.product == dc.productNumbers(i), :);
-    firstDateBOM = dc.productOrderDate(i); 
-    KDates = bom.actualFinishDate;
-    K = -bom.CostPriceValue;
-    iCurK = ones(size(K))*iCurPrice; % Assumes that all are priced in SEK
+    bomRowsInd = find(dc.b.product == dc.productNumbers(i));
 
-    % Add cash flow from final sale
+    % --- Component BOMs: one per BOM row (= one per PO) ----------------
+    % Each holds a single negative cash flow at procDeliveryDate, in the
+    % component's procurement currency. Active from procDate to delivery.
+    for r = 1:length(bomRowsInd)
+      rowIdx = bomRowsInd(r);
+      poNum  = dc.b.purchaseOrderNumber(rowIdx);
+      poRow  = find(dc.p.purchaseOrderNumber == poNum);
+      if length(poRow) ~= 1
+        continue;  % can't link this BOM row to a PO; skip
+      end
+
+      iCurProc      = dc.p.iCur(poRow);
+      procDateVal   = dc.p.orderDate(poRow);
+      procDelivery  = dc.p.accountingDate(poRow);
+      costInProcCur = dc.p.lineAmountOrderCurrency(poRow);
+
+      pbComp = clsPriceBOM(iCurPrice, procDateVal, procDelivery, ...
+                           -costInProcCur, iCurProc);
+      idComp = dc.assets.add(pbComp, AssetType.itemManufactured);
+      dc.b.jComponentBOM(rowIdx) = idComp;
+    end
+
+    % --- Product BOM: one per product ----------------------------------
+    % Single positive cash flow at invoiceDate in the customer's currency.
+    % Active from mfgStart (when the customer order is taken and manufacturing
+    % begins — make-to-order convention) to invoiceDate. After invoice, the
+    % AR bond carries the revenue-side FX as the IAS 21 monetary asset.
+    %
+    % mfgStart per product = min(b.reportingDate) over the product's BOM rows
+    % (the simulation writes mfgStart into b_repDate for every row).
+    mfgStartForProduct = min(dc.b.reportingDate(bomRowsInd));
+
     ii = find(dc.sa.itemNumber == dc.productNumbers(i));
     invoiceNumber = dc.sa.invoiceNumber(ii);
     jj = find(dc.a.transactionCode == 10 & dc.a.invoiceNumber == invoiceNumber);
-    kk = find(dc.a.transactionCode == 20 & dc.a.invoiceNumber == invoiceNumber);
-    sellingPrice = dc.a.foreignCurrencyAmount(jj);
-%     KDates = [KDates ; dc.a.accountingDate(kk)]; % This creates a cash flow in price currency when sold
-    KDates = [KDates ; dc.a.accountingDate(jj)]; % Better to syncronize with bond payment - but introduce small error due to difference in time value of money
-    K = [K ; sellingPrice];
-    iCurK = [iCurK ; dc.a.iCur(jj)]; % Assumes that all are priced in SEK
-    
-    pb = clsPriceBOM(iCurPrice, firstDateBOM, KDates, K, iCurK);
-    dc.assets.add(pb, AssetType.itemManufactured);
+    if length(jj) == 1
+      sellingPrice = dc.a.foreignCurrencyAmount(jj);
+      invoiceDate  = dc.a.accountingDate(jj);
+      iCurSale     = dc.a.iCur(jj);
+
+      pbProd = clsPriceBOM(iCurPrice, mfgStartForProduct, ...
+                           invoiceDate, sellingPrice, iCurSale);
+      idProd = dc.assets.add(pbProd, AssetType.itemManufactured);
+      dc.productBomId(i) = idProd;
+    end
   elseif (strcmp(settings.bomPricing, 'StochasticPrices'))
     bom = dc.b(dc.b.product == dc.productNumbers(i), :);
     firstDateBOM = dc.productOrderDate(i); 

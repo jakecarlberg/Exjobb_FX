@@ -305,12 +305,28 @@ nBond = sum(ismember(nonzeroIdx, dc.assets.indBond));
 fprintf('  Components (inventory): %d,  Shrinkage: %d,  Manufactured: %d,  Bonds: %d\n', nInv, nShr, nMfg, nBond);
 mfgNonzero = intersect(nonzeroIdx, dc.assets.indManufactured);
 if ~isempty(mfgNonzero)
-  fprintf('  Manufactured product order dates (first 5):\n');
+  fprintf('  Manufactured (Component+Product BOMs) with non-zero h0 (first 5):\n');
   for ii = 1:min(5, length(mfgNonzero))
-    k = find(dc.assets.indManufactured == mfgNonzero(ii));
-    fprintf('    product %d: orderDate=%s, h0=%.0f, value=%.0f EUR\n', ...
-      k, datestr(dc.productOrderDate(k)), dp.hI0(mfgNonzero(ii)), ...
-      dp.hI0(mfgNonzero(ii)) * dp.Pbar(1,mfgNonzero(ii)) * dm.fx{dp.IC(mfgNonzero(ii)), iEUR_diag}(1));
+    gIdx = mfgNonzero(ii);   % global asset index
+    % Identify whether this is a Component BOM or Product BOM and look up
+    % the corresponding product/PO. With multiple BOMs per product, the
+    % type-specific index is no longer 1:1 with product index.
+    label = sprintf('asset %d', gIdx);
+    if isfield(dc, 'productBomId')
+      pIdx = find(arrayfun(@(b) b > 0 && dc.assets.indManufactured(b) == gIdx, dc.productBomId), 1);
+      if ~isempty(pIdx)
+        label = sprintf('Product BOM (product %d, orderDate=%s)', pIdx, datestr(dc.productOrderDate(pIdx)));
+      end
+    end
+    if ismember('jComponentBOM', dc.b.Properties.VariableNames)
+      bRow = find(arrayfun(@(b) b > 0 && dc.assets.indManufactured(b) == gIdx, dc.b.jComponentBOM), 1);
+      if ~isempty(bRow)
+        label = sprintf('Component BOM (PO %d, comp %d, product %d)', ...
+          dc.b.purchaseOrderNumber(bRow), dc.b.componentNumber(bRow), dc.b.product(bRow));
+      end
+    end
+    fprintf('    %s: h0=%.0f, value=%.0f EUR\n', label, dp.hI0(gIdx), ...
+      dp.hI0(gIdx) * dp.Pbar(1,gIdx) * dm.fx{dp.IC(gIdx), iEUR_diag}(1));
   end
 end
 
