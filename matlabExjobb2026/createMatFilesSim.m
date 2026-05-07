@@ -92,7 +92,7 @@ saleExposurePct = [38,   22,   12,    7,    6,    5,    5  ];
 cashRetentionFrac = 0.10;  % retain 10% of prior year COGS; sweep rest to parent
 
 % --- Timing parameters (Table 4.7) — unchanged --------------------------
-procLeadMean = 45;  procLeadStd = 10;   % days: procurement lead time
+procLeadMean = 45;  procLeadStd = 10;   % days: procurement lead time (order → delivery)
 mfgMean      = 20;  mfgStd      =  5;   % days: manufacturing duration
 custPayMean  = 45;  custPayStd  = 15;   % days: customer payment delay
 suppPayMean  = 60;  suppPayStd  = 15;   % days: supplier payment delay
