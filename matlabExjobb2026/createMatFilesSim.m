@@ -121,15 +121,16 @@ nTypes = length(typeComponents);
 
 allYears = 2005:2025;  % full range for arrays
 
-% Compute revenue for ALL years first (compounding from 2005 base)
+% Slice index: simStartYear (2007) is the revenue base year
+iStart = find(allYears == simStartYear);
+
+% Compute revenue: startRevenue is the base for simStartYear (2007),
+% then compound forward using actual Sandvik growth rates.
 allRevenue = zeros(1, length(allYears));
-allRevenue(1) = startRevenue;
-for y = 2:length(allYears)
+allRevenue(iStart) = startRevenue;   % 2007 = 500 MEUR base
+for y = iStart+1:length(allYears)
   allRevenue(y) = allRevenue(y-1) * (1 + revenueGrowthPct(y)/100);
 end
-
-% Slice to simulation window
-iStart   = find(allYears == simStartYear);
 simYears = allYears(iStart:end);
 
 % Cap to years that actually have data in dm.dates (prevents out-of-range years
