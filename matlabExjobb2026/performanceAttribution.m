@@ -109,39 +109,49 @@ for k=1:Nc
   V_SEK = V_SEK + VC(:,k).*dm.fx{k, iCurPresentation};
 end
 
-% Prior-year same-quarter average FX rates (rolling comparison rates for CC benchmark).
-% For each date i, f_comp{k}(i) = mean of dm.fx{k,SEK} over the same calendar quarter
-% in the prior year. This makes the frozen rate update every quarter rather than
-% being fixed at day 1.
+% Prior-year same-MONTH average FX rates (rolling comparison rates for CC benchmark).
+% Setup A defines the four-corner rate plane: each of foreign-to-functional and
+% functional-to-presentation rates is independently either at its actual daily
+% value or at its prior-year same-month average.
 [yr_all, mo_all, da_all] = datevec(dm.dates);
-quarter_all = ceil(mo_all / 3);
 
-f_comp = cell(Nc, 1);
+% f_for_comp{k}(i) = prior-year same-month mean of fx{k, c^F} (= fx{k, EUR})
+f_for_comp = cell(Nc, 1);
 for k = 1:Nc
-  f_comp{k} = zeros(M, 1);
+  f_for_comp{k} = zeros(M, 1);
   for i = 1:M
-    mask = (yr_all == yr_all(i)-1) & (quarter_all == quarter_all(i));
+    mask = (yr_all == yr_all(i)-1) & (mo_all == mo_all(i));
     if any(mask)
-      f_comp{k}(i) = mean(dm.fx{k, iCurPresentation}(mask));
+      f_for_comp{k}(i) = mean(dm.fx{k, iCurFunctional}(mask));
     else
-      f_comp{k}(i) = dm.fx{k, iCurPresentation}(1);  % fallback: earliest available
+      f_for_comp{k}(i) = dm.fx{k, iCurFunctional}(1);  % fallback
     end
   end
 end
-f_EUR_SEK_comp = f_comp{iCurFunctional};  % prior-year quarter average EUR/SEK [M x 1]
 
-% Third PAM run: frozen comparison rates for all currencies → total CC (Eq. 4.47)
-V_SEK_const = zeros(M,1);
-for k = 1:Nc
-  V_SEK_const = V_SEK_const + VC(:,k) .* f_comp{k};
+% f_EUR_SEK_comp(i) = prior-year same-month mean of fx{c^F, c^P} (= fx{EUR, SEK})
+f_EUR_SEK_comp = zeros(M, 1);
+for i = 1:M
+  mask = (yr_all == yr_all(i)-1) & (mo_all == mo_all(i));
+  if any(mask)
+    f_EUR_SEK_comp(i) = mean(dm.fx{iCurFunctional, iCurPresentation}(mask));
+  else
+    f_EUR_SEK_comp(i) = dm.fx{iCurFunctional, iCurPresentation}(1);
+  end
 end
 
-% Fourth PAM run: actual transaction rates, frozen EUR/SEK → Translation CC denominator.
-% Rate for currency k→SEK = actual k→EUR rate × frozen EUR/SEK comparison rate.
-% Mirrors Eq. 4.46 with f_EUR_SEK_comp substituted for actual EUR/SEK.
-V_SEK_transl_const = zeros(M,1);
+% Four-corner SEK valuations (Setup A):
+%   V_SEK              = actual foreign × actual EUR/SEK    (computed above)
+%   V_SEK_trans_const  = frozen foreign × actual EUR/SEK
+%   V_SEK_transl_const = actual foreign × frozen EUR/SEK
+%   V_SEK_const        = frozen foreign × frozen EUR/SEK
+V_SEK_trans_const  = zeros(M, 1);
+V_SEK_transl_const = zeros(M, 1);
+V_SEK_const        = zeros(M, 1);
 for k = 1:Nc
-  V_SEK_transl_const = V_SEK_transl_const + VC(:,k) .* (dm.fx{k, iCurFunctional} .* f_EUR_SEK_comp);
+  V_SEK_trans_const  = V_SEK_trans_const  + VC(:,k) .* f_for_comp{k}        .* dm.fx{iCurFunctional, iCurPresentation};
+  V_SEK_transl_const = V_SEK_transl_const + VC(:,k) .* dm.fx{k, iCurFunctional} .* f_EUR_SEK_comp;
+  V_SEK_const        = V_SEK_const        + VC(:,k) .* f_for_comp{k}        .* f_EUR_SEK_comp;
 end
 
 % -------------------------------------------------------------------------
@@ -378,15 +388,16 @@ dFX_trans_inclSettl     = dFX_trans;
 % V_SEK comes from the second PAM run (c_p = SEK), isolating EUR/SEK movements
 dFX_transl = [0; diff(V_SEK) - diff(V_EUR).*f_EUR_SEK(2:end)];
 
-% Constant-currency FX (Eq. 4.47): frozen-rate SEK change minus EUR change at EUR/SEK
-dFX_cc = [0; diff(V_SEK_const) - diff(V_EUR).*f_EUR_SEK(2:end)];
-
-% Decompose CC using the fourth PAM run (mirrors Eq. 4.46 / 4.47 structure):
-%   Translation CC: fourth run (actual transaction, frozen EUR/SEK) vs EUR run
-%   Transaction CC: residual = total CC minus translation CC
-dFX_cc_total  = dFX_cc;
-dFX_transl_CC = [0; diff(V_SEK_transl_const) - diff(V_EUR) .* f_EUR_SEK(2:end)];
-dFX_trans_CC  = dFX_cc_total - dFX_transl_CC;
+% Constant-currency FX (Eq. 4.47) — three-way decomposition (Setup A):
+%   Total      = ΔV_SEK − ΔV_SEK_const                  (effect of unfreezing all rates)
+%   Pure trans = Δ(V_SEK_transl_const) − Δ(V_SEK_const) (foreign rate effect at frozen EUR/SEK)
+%   Pure transl= Δ(V_SEK_trans_const)  − Δ(V_SEK_const) (EUR/SEK rate effect at frozen foreign)
+%   Cross      = Total − pure_trans − pure_transl       (Δforeign × ΔEUR/SEK interaction)
+% By construction Total = pure_trans + pure_transl + cross (verified by hard assertion below).
+dFX_cc_total  = [0; diff(V_SEK)              - diff(V_SEK_const)];
+dFX_cc_trans  = [0; diff(V_SEK_transl_const) - diff(V_SEK_const)];
+dFX_cc_transl = [0; diff(V_SEK_trans_const)  - diff(V_SEK_const)];
+dFX_cc_cross  = dFX_cc_total - dFX_cc_trans - dFX_cc_transl;
 
 % PAM Constant Currency — Last Year Daily Rates decomposition:
 %   Total LY CC: fifth run (all LY rates) vs EUR run at actual EUR/SEK
@@ -405,6 +416,7 @@ dr.V_EUR     = V_EUR;        % functional currency (EUR) — PAM base
 dr.V_SEK     = V_SEK;
 dr.VC        = VC;           % per-currency bucket value in native currency [M x Nc]
 dr.V_SEK_const        = V_SEK_const;
+dr.V_SEK_trans_const  = V_SEK_trans_const;
 dr.V_SEK_transl_const = V_SEK_transl_const;
 dr.V_SEK_LY           = V_SEK_LY;
 dr.V_SEK_transl_LY    = V_SEK_transl_LY;
@@ -430,18 +442,20 @@ dr.dVhdepsf  = dVhdepsf;
 dr.dFX_trans      = dFX_trans;
 dr.dFX_trans_BOM  = dFX_trans_BOM;
 dr.dFX_transl     = dFX_transl;
-dr.dFX_cc         = dFX_cc;
 dr.FX_trans       = cumsum(dFX_trans);
 dr.FX_trans_BOM   = cumsum(dFX_trans_BOM);
 dr.FX_transl      = cumsum(dFX_transl);
-dr.FX_cc          = cumsum(dFX_cc);
-dr.f_EUR_SEK_comp  = f_EUR_SEK_comp;
-dr.dFX_trans_CC   = dFX_trans_CC;
-dr.dFX_transl_CC  = dFX_transl_CC;
+% PAM CC three-way decomposition (Setup A): total = trans + transl + cross
+dr.f_EUR_SEK_comp = f_EUR_SEK_comp;
+dr.f_for_comp     = f_for_comp;
 dr.dFX_cc_total   = dFX_cc_total;
-dr.FX_trans_CC    = cumsum(dFX_trans_CC);
-dr.FX_transl_CC   = cumsum(dFX_transl_CC);
+dr.dFX_cc_trans   = dFX_cc_trans;
+dr.dFX_cc_transl  = dFX_cc_transl;
+dr.dFX_cc_cross   = dFX_cc_cross;
 dr.FX_cc_total    = cumsum(dFX_cc_total);
+dr.FX_cc_trans    = cumsum(dFX_cc_trans);
+dr.FX_cc_transl   = cumsum(dFX_cc_transl);
+dr.FX_cc_cross    = cumsum(dFX_cc_cross);
 dr.dFX_trans_CC_LY   = dFX_trans_CC_LY;
 dr.dFX_transl_CC_LY  = dFX_transl_CC_LY;
 dr.dFX_cc_LY_total   = dFX_cc_LY_total;
@@ -449,31 +463,32 @@ dr.FX_trans_CC_LY    = cumsum(dFX_trans_CC_LY);
 dr.FX_transl_CC_LY   = cumsum(dFX_transl_CC_LY);
 dr.FX_cc_LY_total    = cumsum(dFX_cc_LY_total);
 
-% Sanity check: trans_CC + transl_CC must equal total CC (relative tolerance)
+% Hard assertion: three-way PAM CC decomposition must sum exactly to total
 ccScale = max(max(abs(dFX_cc_total)), 1);
-assert(max(abs(dFX_trans_CC + dFX_transl_CC - dFX_cc_total)) < 1e-8 * ccScale, ...
-  'CC decomposition does not sum to total');
+assert(max(abs(dFX_cc_trans + dFX_cc_transl + dFX_cc_cross - dFX_cc_total)) < 1e-8 * ccScale, ...
+  'PAM CC decomposition failure: trans + transl + cross != total');
 
-% Sanity check: LY trans_CC + LY transl_CC must equal LY total CC
+% Sanity check: LY trans_CC + LY transl_CC must equal LY total CC (LY measure unchanged from prior version)
 ccScaleLY = max(max(abs(dFX_cc_LY_total)), 1);
 assert(max(abs(dFX_trans_CC_LY + dFX_transl_CC_LY - dFX_cc_LY_total)) < 1e-8 * ccScaleLY, ...
   'CC LY decomposition does not sum to total');
 
 % Quarterly aggregation of CC components (same periodDates logic as runMC.m)
-% Produces per-quarter totals for comparison against Method 1, 2, and 2b.
 periodDates = makeQuarterDates(dm.dates(1), dm.dates(end));
 nPeriods    = length(periodDates) - 1;
-dr.FX_trans_CC_quarterly  = zeros(nPeriods, 1);
-dr.FX_transl_CC_quarterly = zeros(nPeriods, 1);
-dr.FX_cc_total_quarterly  = zeros(nPeriods, 1);
+dr.FX_cc_total_quarterly   = zeros(nPeriods, 1);
+dr.FX_cc_trans_quarterly   = zeros(nPeriods, 1);
+dr.FX_cc_transl_quarterly  = zeros(nPeriods, 1);
+dr.FX_cc_cross_quarterly   = zeros(nPeriods, 1);
 dr.FX_trans_CC_LY_quarterly  = zeros(nPeriods, 1);
 dr.FX_transl_CC_LY_quarterly = zeros(nPeriods, 1);
 dr.FX_cc_LY_total_quarterly  = zeros(nPeriods, 1);
 for p = 1:nPeriods
   idx = find(dm.dates > periodDates(p) & dm.dates <= periodDates(p+1));
-  dr.FX_trans_CC_quarterly(p)  = sum(dFX_trans_CC(idx));
-  dr.FX_transl_CC_quarterly(p) = sum(dFX_transl_CC(idx));
   dr.FX_cc_total_quarterly(p)  = sum(dFX_cc_total(idx));
+  dr.FX_cc_trans_quarterly(p)  = sum(dFX_cc_trans(idx));
+  dr.FX_cc_transl_quarterly(p) = sum(dFX_cc_transl(idx));
+  dr.FX_cc_cross_quarterly(p)  = sum(dFX_cc_cross(idx));
   dr.FX_trans_CC_LY_quarterly(p)  = sum(dFX_trans_CC_LY(idx));
   dr.FX_transl_CC_LY_quarterly(p) = sum(dFX_transl_CC_LY(idx));
   dr.FX_cc_LY_total_quarterly(p)  = sum(dFX_cc_LY_total(idx));
@@ -587,16 +602,16 @@ if doPlot
   % PAM FX Benchmarks (thesis Eqs. 4.45-4.47) — all in SEK
   % -----------------------------------------------------------------------
   figure(7);
-  plot(dm.dates, [dr.FX_trans, dr.FX_trans_BOM, dr.FX_transl, dr.FX_cc]);
+  plot(dm.dates, [dr.FX_trans, dr.FX_trans_BOM, dr.FX_transl, dr.FX_cc_total]);
   datetick('x', 'yyyy');
-  legend({'Trans FX — Bonds only (Eq.4.45)', 'Trans FX — Bonds+BOM', 'Translation FX (Eq.4.46)', 'Constant-currency FX (Eq.4.47)'}, 'Location', 'Best');
+  legend({'Trans FX — Bonds only (Eq.4.45)', 'Trans FX — Bonds+BOM', 'Translation FX (Eq.4.46)', 'Constant-currency FX total (Eq.4.47)'}, 'Location', 'Best');
   title('PAM FX Benchmarks (cumulative, SEK)');
 
   figure(8);
-  plot(dm.dates, [dr.FX_trans_CC, dr.FX_transl_CC, dr.FX_cc_total]);
+  plot(dm.dates, [dr.FX_cc_trans, dr.FX_cc_transl, dr.FX_cc_cross, dr.FX_cc_total]);
   datetick('x', 'yyyy');
-  legend({'CC Transaction component', 'CC Translation component', 'CC Total (trans+transl)'}, 'Location', 'Best');
-  title('PAM CC Decomposition — Quarterly Avg Rates (cumulative, SEK)');
+  legend({'CC Pure Transaction (frozen EUR/SEK)', 'CC Pure Translation (frozen foreign)', 'CC Cross-rate term', 'CC Total = trans + transl + cross'}, 'Location', 'Best');
+  title('PAM CC Three-Way Decomposition — Prior-Year Monthly Avg (cumulative, SEK)');
 
   figure(9);
   plot(dm.dates, [dr.FX_trans_CC_LY, dr.FX_transl_CC_LY, dr.FX_cc_LY_total]);
@@ -608,11 +623,11 @@ if doPlot
   fprintf('  Trans FX — Bonds only (Eq.4.45): %20s\n', fmtNum(dr.FX_trans(end), 2));
   fprintf('  Trans FX — Bonds+BOM:             %20s\n', fmtNum(dr.FX_trans_BOM(end), 2));
   fprintf('  Translation FX        (Eq.4.46): %20s\n', fmtNum(dr.FX_transl(end), 2));
-  fprintf('  Constant-currency FX  (Eq.4.47): %20s\n', fmtNum(dr.FX_cc(end), 2));
-  fprintf('\n=== PAM CC Decomposition — Quarterly Avg Rates (cumulative, SEK) ===\n');
-  fprintf('  CC Transaction component:       %20s\n', fmtNum(dr.FX_trans_CC(end), 2));
-  fprintf('  CC Translation component:       %20s\n', fmtNum(dr.FX_transl_CC(end), 2));
-  fprintf('  CC Total (trans + transl):      %20s\n', fmtNum(dr.FX_cc_total(end), 2));
+  fprintf('\n=== PAM Constant Currency (Eq.4.47) — Three-Way Decomposition (Setup A, SEK) ===\n');
+  fprintf('  Pure Transaction  (frozen EUR/SEK):  %20s\n', fmtNum(dr.FX_cc_trans(end), 2));
+  fprintf('  Pure Translation  (frozen foreign):  %20s\n', fmtNum(dr.FX_cc_transl(end), 2));
+  fprintf('  Cross-rate term   (Δfor x ΔEUR/SEK): %20s\n', fmtNum(dr.FX_cc_cross(end), 2));
+  fprintf('  CC Total          (trans+transl+x):  %20s\n', fmtNum(dr.FX_cc_total(end), 2));
   fprintf('\n=== PAM Constant Currency — Last Year Daily Rates (cumulative, SEK) ===\n');
   fprintf('  CC Transaction component (LY):  %20s\n', fmtNum(dr.FX_trans_CC_LY(end), 2));
   fprintf('  CC Translation component (LY):  %20s\n', fmtNum(dr.FX_transl_CC_LY(end), 2));
