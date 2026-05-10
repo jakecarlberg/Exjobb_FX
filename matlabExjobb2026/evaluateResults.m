@@ -62,9 +62,10 @@ e_OCI.M2w = mc.M2w_OCI(valid,:) - mc.FX_transl(valid,:);
 e_OCI.M2m = mc.M2m_OCI(valid,:) - mc.FX_transl(valid,:);
 e_OCI.M2q = mc.M2q_OCI(valid,:) - mc.FX_transl(valid,:);
 
-% --- CC total (trans+transl) vs PAM CC quarterly-avg-rate (Eq. 4.47) ---
+% --- CC total (trans+transl) vs PAM CC three-way total (Eq. 4.47) ---
+% PAM CC = pure trans + pure transl + cross. Compare against industry trans+transl totals.
 Pcc    = min(size(mc.CC_avg_TI, 2), P);
-PAM_cc = mc.FX_cc(valid, 1:Pcc);
+PAM_cc = mc.FX_cc_total(valid, 1:Pcc);
 
 CC_avg_tot   = mc.CC_avg_TI(valid,1:Pcc)   + mc.CC_avg_OCI(valid,1:Pcc);
 CC_close_tot = mc.CC_close_TI(valid,1:Pcc) + mc.CC_close_OCI(valid,1:Pcc);

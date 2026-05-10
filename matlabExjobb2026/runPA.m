@@ -1,4 +1,4 @@
-% runPA  Single-run Performance Attribution for the thesis simulation.
+4% runPA  Single-run Performance Attribution for the thesis simulation.
 %
 % Loads market data (once), generates a simulated transaction dataset,
 % runs the full PA pipeline, prints PAM FX benchmarks and FX gains.
@@ -10,7 +10,7 @@
 %            Adds Figure 12 and the Sensitivity_NoDiscount Excel sheet.
 %   false → skip (saves ~30 % of total compute time)
 % =========================================================================
-runSensitivityNoDiscount = true;
+runSensitivityNoDiscount = false;
 
 clear settings;
 settings.dataFolder    = 'simulatedData';
@@ -52,6 +52,12 @@ pnl = buildFunctionalPnL(dm, dc, bs);
 m1 = computeMethod1(dm, dc, '', bs, pnl);
 
 m2 = computeMethod2(dm, dc, '', bs, pnl);
+
+% Flow-restricted PAM CC — same flow universe as industry CC, but with the
+% three-way (trans / transl / cross) decomposition applied per recognition
+% event. Used below as an apples-to-apples benchmark that isolates the
+% stock-vs-flow base axis from all other PAM-vs-industry differences.
+fcc = performanceAttributionFlowCC(dm, dc, pnl, 'month');
 
 fprintf('\n=== Method 1 & 2 (monthly): FX Impacts per Quarter (SEK) ===\n');
 fprintf('%-12s %14s %14s %14s %14s\n', 'Period end', 'M1 TI', 'M1 OCI', 'M2 TI', 'M2 OCI');
@@ -114,6 +120,32 @@ fprintf('%-22s %18s %18s\n', 'Closing-rate', ...
   fmtNum(sum(m1.cc.close.quarterly_TI)), fmtNum(sum(m1.cc.close.quarterly_OCI)));
 fprintf('%s\n', repmat('-', 1, 60));
 
+% -------------------------------------------------------------------------
+% Flow-restricted PAM CC — three lifecycle variants (snap / bonds / BOM)
+%   snap   = recognition-day snapshot only
+%   bonds  = recognition-to-payment lifecycle (PAM daily integration)
+%   BOM    = order-to-payment lifecycle (BOM-extended; full exposure window)
+%
+% Algebraic identity: bonds.cumulative == BOM.cumulative
+%   (only the time distribution differs; BOM puts more contribution in the
+%    pre-recognition period)
+% -------------------------------------------------------------------------
+fprintf('\n=== Flow-restricted PAM CC (3 variants over AR/AP code-10, cumulative SEK) ===\n');
+fprintf('%-22s %16s %16s %16s %16s\n', 'Variant', 'trans', 'transl', 'cross', 'total');
+fprintf('%s\n', repmat('-', 1, 90));
+fprintf('%-22s %16s %16s %16s %16s\n', 'snap   (rec-day)', ...
+  fmtNum(sum(fcc.snap.trans_quarterly)),   fmtNum(sum(fcc.snap.transl_quarterly)), ...
+  fmtNum(sum(fcc.snap.cross_quarterly)),   fmtNum(sum(fcc.snap.total_quarterly)));
+fprintf('%-22s %16s %16s %16s %16s\n', 'bonds  (rec->pay)', ...
+  fmtNum(sum(fcc.bonds.trans_quarterly)),  fmtNum(sum(fcc.bonds.transl_quarterly)), ...
+  fmtNum(sum(fcc.bonds.cross_quarterly)),  fmtNum(sum(fcc.bonds.total_quarterly)));
+fprintf('%-22s %16s %16s %16s %16s\n', 'BOM    (order->pay)', ...
+  fmtNum(sum(fcc.BOM.trans_quarterly)),    fmtNum(sum(fcc.BOM.transl_quarterly)), ...
+  fmtNum(sum(fcc.BOM.cross_quarterly)),    fmtNum(sum(fcc.BOM.total_quarterly)));
+fprintf('%s\n', repmat('-', 1, 90));
+fprintf('  Identity check: |bonds.total - BOM.total| = %s SEK (must be ~0)\n', ...
+  fmtNum(abs(sum(fcc.bonds.total_quarterly) - sum(fcc.BOM.total_quarterly))));
+
 % =========================================================================
 % 2x2 COMPARISON PLOT — PAM vs Method 1 vs Method 2 (monthly)
 % =========================================================================
@@ -160,13 +192,17 @@ datetick('x', 'yyyy', 'keepticks'); grid on;
 ylabel('SEK (millions)'); title('Translation Impact / OCI (cumulative)');
 legend('PAM (Eq.4.46)', 'Method 1', 'Method 2 (monthly)', 'Location', 'best');
 
-% --- Panel 3: Constant Currency (PAM only — CY and LY rates) ---
+% --- Panel 3: Constant-Currency — PAM-flow BOM vs Industry methods (cumulative) ---
+% Cumulative version of figure 11 panel 3: full-exposure PAM-flow CC
+% (order->payment lifecycle) against the three industry CC variants.
 subplot(2,2,3); hold on;
-plot(qDates, cumsum(dr.FX_cc_total_quarterly(:))/1e6,    'LineWidth', 1.5);
-plot(qDates, cumsum(dr.FX_cc_LY_total_quarterly(:))/1e6, 'LineWidth', 1.5);
+plot(fcc.periodEndDates,   cumsum(fcc.BOM.total_quarterly)/1e6,                                  'LineWidth', 1.5);
+plot(m1.cc.periodEndDates, cumsum(m1.cc.M1.quarterly_TI    + m1.cc.M1.quarterly_OCI)/1e6,        'LineWidth', 1.5);
+plot(m1.cc.periodEndDates, cumsum(m1.cc.avg.quarterly_TI   + m1.cc.avg.quarterly_OCI)/1e6,       'LineWidth', 1.5);
+plot(m1.cc.periodEndDates, cumsum(m1.cc.close.quarterly_TI + m1.cc.close.quarterly_OCI)/1e6,     'LineWidth', 1.5);
 datetick('x', 'yyyy', 'keepticks'); grid on;
-ylabel('SEK (millions)'); title('Constant-Currency FX (cumulative, PAM)');
-legend('CC — current yr rates', 'CC — last yr rates', 'Location', 'best');
+ylabel('SEK (millions)'); title('Constant-Currency — PAM-flow BOM vs Industry (cumulative)');
+legend('PAM-flow BOM total', 'Method 1 total', 'Method 2 (avg) total', 'Method 2 (closing) total', 'Location', 'best');
 
 % --- Panel 4: EUR/SEK rate ---
 subplot(2,2,4);
@@ -200,13 +236,17 @@ datetick('x', 'yyyy', 'keepticks'); grid on;
 ylabel('SEK (millions)'); title('Translation Impact / OCI (non-cumulative)');
 legend('PAM (Eq.4.46)', 'Method 1', 'Method 2 (monthly)', 'Location', 'best');
 
-% --- Panel 3: Constant Currency (PAM only — CY and LY rates, non-cumulative) ---
+% --- Panel 3: Constant-Currency — PAM-flow BOM vs Industry methods (non-cumulative) ---
+% Comparing the full-exposure PAM-flow CC (order->payment lifecycle) against
+% the three industry CC variants on the same per-quarter SEK axis.
 subplot(2,2,3); hold on;
-plot(qDates, dr.FX_cc_total_quarterly(:)/1e6,    '-', 'LineWidth', 1.5, 'Marker', 'none');
-plot(qDates, dr.FX_cc_LY_total_quarterly(:)/1e6, '-', 'LineWidth', 1.5, 'Marker', 'none');
+plot(fcc.periodEndDates,   fcc.BOM.total_quarterly/1e6,                                 '-', 'LineWidth', 1.5, 'Marker', 'none');
+plot(m1.cc.periodEndDates, (m1.cc.M1.quarterly_TI    + m1.cc.M1.quarterly_OCI)/1e6,     '-', 'LineWidth', 1.5, 'Marker', 'none');
+plot(m1.cc.periodEndDates, (m1.cc.avg.quarterly_TI   + m1.cc.avg.quarterly_OCI)/1e6,    '-', 'LineWidth', 1.5, 'Marker', 'none');
+plot(m1.cc.periodEndDates, (m1.cc.close.quarterly_TI + m1.cc.close.quarterly_OCI)/1e6,  '-', 'LineWidth', 1.5, 'Marker', 'none');
 datetick('x', 'yyyy', 'keepticks'); grid on;
-ylabel('SEK (millions)'); title('Constant-Currency FX (non-cumulative, PAM)');
-legend('CC — current yr rates', 'CC — last yr rates', 'Location', 'best');
+ylabel('SEK (millions)'); title('Constant-Currency — PAM-flow BOM vs Industry (non-cumulative)');
+legend('PAM-flow BOM total', 'Method 1 total', 'Method 2 (avg) total', 'Method 2 (closing) total', 'Location', 'best');
 
 % --- Panel 4: EUR/SEK rate ---
 subplot(2,2,4);
@@ -329,5 +369,333 @@ if ~isempty(mfgNonzero)
       dp.hI0(gIdx) * dp.Pbar(1,gIdx) * dm.fx{dp.IC(gIdx), iEUR_diag}(1));
   end
 end
+
+% =========================================================================
+% PAM vs Industry CC comparison — three per-quarter figures (one per channel)
+%   Figure 13: Trans CC channel
+%   Figure 14: Transl CC channel
+%   Figure 15: Total CC
+% =========================================================================
+qDates = dr.periodDates(2:end);     % quarter-end dates
+nP     = length(qDates);
+
+% PAM per-quarter series
+PAM_trans_q             = dr.FX_cc_trans_quarterly;
+PAM_transl_q            = dr.FX_cc_transl_quarterly;
+PAM_cross_q             = dr.FX_cc_cross_quarterly;
+PAM_total_q             = dr.FX_cc_total_quarterly;
+% PAM trans + cross is the natural counterpart to industry trans (industry
+% absorbs the cross term inside Δc→SEK in its published transaction component)
+PAM_trans_plus_cross_q  = PAM_trans_q + PAM_cross_q;
+
+% Industry quarterly series — align to PAM quarter grid
+M1_trans_q     = zeros(nP,1); M1_transl_q     = zeros(nP,1);
+Mavg_trans_q   = zeros(nP,1); Mavg_transl_q   = zeros(nP,1);
+Mclose_trans_q = zeros(nP,1); Mclose_transl_q = zeros(nP,1);
+if isfield(m1, 'cc')
+  for p = 1:nP
+    [~, mp] = min(abs(m1.cc.periodEndDates - qDates(p)));
+    if abs(m1.cc.periodEndDates(mp) - qDates(p)) <= 5
+      M1_trans_q(p)     = m1.cc.M1.quarterly_TI(mp);
+      M1_transl_q(p)    = m1.cc.M1.quarterly_OCI(mp);
+      Mavg_trans_q(p)   = m1.cc.avg.quarterly_TI(mp);
+      Mavg_transl_q(p)  = m1.cc.avg.quarterly_OCI(mp);
+      Mclose_trans_q(p) = m1.cc.close.quarterly_TI(mp);
+      Mclose_transl_q(p)= m1.cc.close.quarterly_OCI(mp);
+    end
+  end
+end
+M1_total_q     = M1_trans_q     + M1_transl_q;
+Mavg_total_q   = Mavg_trans_q   + Mavg_transl_q;
+Mclose_total_q = Mclose_trans_q + Mclose_transl_q;
+
+% --- Flow-restricted PAM CC: project all three modes onto PAM quarter grid -
+% Each lifecycle mode gets its own quarter-aligned series:
+%   fcc_snap_*_q    — recognition-day snapshot only
+%   fcc_bonds_*_q   — recognition-to-payment lifecycle (PAM daily integration)
+%   fcc_BOM_*_q     — order-to-payment lifecycle (BOM-extended, full window)
+fcc_snap_trans_q   = zeros(nP, 1); fcc_snap_transl_q  = zeros(nP, 1);
+fcc_snap_cross_q   = zeros(nP, 1); fcc_snap_total_q   = zeros(nP, 1);
+fcc_bonds_trans_q  = zeros(nP, 1); fcc_bonds_transl_q = zeros(nP, 1);
+fcc_bonds_cross_q  = zeros(nP, 1); fcc_bonds_total_q  = zeros(nP, 1);
+fcc_BOM_trans_q    = zeros(nP, 1); fcc_BOM_transl_q   = zeros(nP, 1);
+fcc_BOM_cross_q    = zeros(nP, 1); fcc_BOM_total_q    = zeros(nP, 1);
+
+for p = 1:nP
+  [~, mp] = min(abs(fcc.periodEndDates - qDates(p)));
+  if abs(fcc.periodEndDates(mp) - qDates(p)) <= 5
+    fcc_snap_trans_q(p)   = fcc.snap.trans_quarterly(mp);
+    fcc_snap_transl_q(p)  = fcc.snap.transl_quarterly(mp);
+    fcc_snap_cross_q(p)   = fcc.snap.cross_quarterly(mp);
+    fcc_snap_total_q(p)   = fcc.snap.total_quarterly(mp);
+
+    fcc_bonds_trans_q(p)  = fcc.bonds.trans_quarterly(mp);
+    fcc_bonds_transl_q(p) = fcc.bonds.transl_quarterly(mp);
+    fcc_bonds_cross_q(p)  = fcc.bonds.cross_quarterly(mp);
+    fcc_bonds_total_q(p)  = fcc.bonds.total_quarterly(mp);
+
+    fcc_BOM_trans_q(p)    = fcc.BOM.trans_quarterly(mp);
+    fcc_BOM_transl_q(p)   = fcc.BOM.transl_quarterly(mp);
+    fcc_BOM_cross_q(p)    = fcc.BOM.cross_quarterly(mp);
+    fcc_BOM_total_q(p)    = fcc.BOM.total_quarterly(mp);
+  end
+end
+
+% Industry-CC^trans counterpart: PAM (trans + cross), per mode
+fcc_snap_tr_plus_cr_q  = fcc_snap_trans_q  + fcc_snap_cross_q;
+fcc_bonds_tr_plus_cr_q = fcc_bonds_trans_q + fcc_bonds_cross_q;
+fcc_BOM_tr_plus_cr_q   = fcc_BOM_trans_q   + fcc_BOM_cross_q;
+
+% =========================================================================
+% CC validation diagnostics: per-quarter correlation PAM vs Industry
+%   Magnitudes differ by ~10x (gross portfolio vs net flow exposure), but
+%   if the methods capture the same FX pattern the correlations should be
+%   strongly positive. This isolates "directional agreement" from
+%   "magnitude agreement".
+% =========================================================================
+ccCorrPairs = { ...
+  '====================== PAM-STOCK (whole portfolio, daily integration) ======', [], [] ; ...
+  'PAM-stock total       vs M1 total           ', PAM_total_q,             M1_total_q     ; ...
+  'PAM-stock total       vs M2avg total        ', PAM_total_q,             Mavg_total_q   ; ...
+  'PAM-stock total       vs M2close total      ', PAM_total_q,             Mclose_total_q ; ...
+  'PAM-stock(tr+cr)      vs M1 trans           ', PAM_trans_plus_cross_q,  M1_trans_q     ; ...
+  'PAM-stock(tr+cr)      vs M2avg trans        ', PAM_trans_plus_cross_q,  Mavg_trans_q   ; ...
+  'PAM-stock(tr+cr)      vs M2close trans      ', PAM_trans_plus_cross_q,  Mclose_trans_q ; ...
+  'PAM-stock transl      vs Industry transl    ', PAM_transl_q,            M1_transl_q    ; ...
+  '====================== PAM-FLOW SNAP (recognition-day, mimics industry) ====', [], [] ; ...
+  'PAM-flow snap total   vs M1 total           ', fcc_snap_total_q,        M1_total_q     ; ...
+  'PAM-flow snap total   vs M2avg total        ', fcc_snap_total_q,        Mavg_total_q   ; ...
+  'PAM-flow snap total   vs M2close total      ', fcc_snap_total_q,        Mclose_total_q ; ...
+  'PAM-flow snap total   vs M1 trans  (NATURAL)', fcc_snap_total_q,        M1_trans_q     ; ...
+  'PAM-flow snap total   vs M2avg trans        ', fcc_snap_total_q,        Mavg_trans_q   ; ...
+  'PAM-flow snap total   vs M2close trans      ', fcc_snap_total_q,        Mclose_trans_q ; ...
+  'PAM-flow snap(tr+cr)  vs M1 trans           ', fcc_snap_tr_plus_cr_q,   M1_trans_q     ; ...
+  '====================== PAM-FLOW BONDS (recognition->payment lifecycle) =====', [], [] ; ...
+  'PAM-flow bonds total  vs M1 total           ', fcc_bonds_total_q,       M1_total_q     ; ...
+  'PAM-flow bonds total  vs M2avg total        ', fcc_bonds_total_q,       Mavg_total_q   ; ...
+  'PAM-flow bonds total  vs M2close total      ', fcc_bonds_total_q,       Mclose_total_q ; ...
+  'PAM-flow bonds total  vs M1 trans  (NATURAL)', fcc_bonds_total_q,       M1_trans_q     ; ...
+  'PAM-flow bonds total  vs M2avg trans        ', fcc_bonds_total_q,       Mavg_trans_q   ; ...
+  'PAM-flow bonds total  vs M2close trans      ', fcc_bonds_total_q,       Mclose_trans_q ; ...
+  'PAM-flow bonds(tr+cr) vs M1 trans           ', fcc_bonds_tr_plus_cr_q,  M1_trans_q     ; ...
+  '====================== PAM-FLOW BOM (order->payment, full exposure) ========', [], [] ; ...
+  'PAM-flow BOM total    vs M1 total           ', fcc_BOM_total_q,         M1_total_q     ; ...
+  'PAM-flow BOM total    vs M2avg total        ', fcc_BOM_total_q,         Mavg_total_q   ; ...
+  'PAM-flow BOM total    vs M2close total      ', fcc_BOM_total_q,         Mclose_total_q ; ...
+  'PAM-flow BOM total    vs M1 trans  (NATURAL)', fcc_BOM_total_q,         M1_trans_q     ; ...
+  'PAM-flow BOM total    vs M2avg trans        ', fcc_BOM_total_q,         Mavg_trans_q   ; ...
+  'PAM-flow BOM total    vs M2close trans      ', fcc_BOM_total_q,         Mclose_trans_q ; ...
+  'PAM-flow BOM(tr+cr)   vs M1 trans           ', fcc_BOM_tr_plus_cr_q,    M1_trans_q     ; ...
+  '====================== INTERNAL: PAM variants vs each other ================', [], [] ; ...
+  'PAM-stock total       vs PAM-flow snap      ', PAM_total_q,             fcc_snap_total_q  ; ...
+  'PAM-stock total       vs PAM-flow bonds     ', PAM_total_q,             fcc_bonds_total_q ; ...
+  'PAM-stock total       vs PAM-flow BOM       ', PAM_total_q,             fcc_BOM_total_q   ; ...
+  'PAM-flow snap total   vs PAM-flow bonds     ', fcc_snap_total_q,        fcc_bonds_total_q ; ...
+  'PAM-flow snap total   vs PAM-flow BOM       ', fcc_snap_total_q,        fcc_BOM_total_q   ; ...
+  'PAM-flow bonds total  vs PAM-flow BOM       ', fcc_bonds_total_q,       fcc_BOM_total_q   };
+
+fprintf('\n=== CC per-quarter correlation: PAM vs Industry methods ===\n');
+for ccI = 1:size(ccCorrPairs, 1)
+  a = ccCorrPairs{ccI, 2};
+  b = ccCorrPairs{ccI, 3};
+  if isempty(a) || isempty(b)
+    % Section separator row
+    fprintf('  %s\n', ccCorrPairs{ccI, 1});
+    continue;
+  end
+  a = a(:); b = b(:);
+  if std(a) > 0 && std(b) > 0
+    % Pearson correlation — base-MATLAB only (no Statistics Toolbox dependency)
+    am = a - mean(a);
+    bm = b - mean(b);
+    rho = sum(am .* bm) / sqrt(sum(am.^2) * sum(bm.^2));
+    fprintf('  %s : %6.3f\n', ccCorrPairs{ccI, 1}, rho);
+  else
+    fprintf('  %s :    NaN  (one series is constant — industry CC unavailable?)\n', ccCorrPairs{ccI, 1});
+  end
+end
+clear ccCorrPairs ccI a b am bm rho
+
+% =========================================================================
+% Per-PAM-flow-CC-variant non-cumulative comparison vs industry methods
+% (one figure per variant, all on the same per-quarter SEK axis)
+%   Fig 13: PAM-flow snap total  vs M1 / M2avg / M2close
+%   Fig 14: PAM-flow bonds total vs M1 / M2avg / M2close
+%   Fig 15: PAM-flow BOM total   vs M1 / M2avg / M2close
+%   Fig 16: PAM-flow snap / bonds / BOM overlay (internal)
+% =========================================================================
+
+% --- Figure 13: PAM-flow SNAP (recognition snapshot) vs methods ------------
+figure(13); clf;
+hold on;
+plot(qDates, fcc_snap_total_q, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow snap total');
+plot(qDates, M1_total_q,       'LineWidth', 1.4, 'DisplayName', 'M1 total');
+plot(qDates, Mavg_total_q,     'LineWidth', 1.4, 'DisplayName', 'M2avg total');
+plot(qDates, Mclose_total_q,   'LineWidth', 1.4, 'DisplayName', 'M2close total');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on;
+datetick('x', 'yyyy');
+xlabel('Quarter end'); ylabel('SEK per quarter');
+title('PAM-flow SNAP (recognition-day) vs Industry — per quarter');
+legend('Location', 'best');
+
+% --- Figure 14: PAM-flow BONDS (recognition->payment) vs methods -----------
+figure(14); clf;
+hold on;
+plot(qDates, fcc_bonds_total_q, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow bonds total');
+plot(qDates, M1_total_q,        'LineWidth', 1.4, 'DisplayName', 'M1 total');
+plot(qDates, Mavg_total_q,      'LineWidth', 1.4, 'DisplayName', 'M2avg total');
+plot(qDates, Mclose_total_q,    'LineWidth', 1.4, 'DisplayName', 'M2close total');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on;
+datetick('x', 'yyyy');
+xlabel('Quarter end'); ylabel('SEK per quarter');
+title('PAM-flow BONDS (recognition->payment lifecycle) vs Industry — per quarter');
+legend('Location', 'best');
+
+% --- Figure 15: PAM-flow BOM (order->payment) vs methods -------------------
+figure(15); clf;
+hold on;
+plot(qDates, fcc_BOM_total_q, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow BOM total');
+plot(qDates, M1_total_q,      'LineWidth', 1.4, 'DisplayName', 'M1 total');
+plot(qDates, Mavg_total_q,    'LineWidth', 1.4, 'DisplayName', 'M2avg total');
+plot(qDates, Mclose_total_q,  'LineWidth', 1.4, 'DisplayName', 'M2close total');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on;
+datetick('x', 'yyyy');
+xlabel('Quarter end'); ylabel('SEK per quarter');
+title('PAM-flow BOM (order->payment, full exposure) vs Industry — per quarter');
+legend('Location', 'best');
+
+% --- Figure 16: All three PAM-flow variants overlay (no methods) -----------
+%   Useful diagnostic for seeing how the lifecycle window affects the
+%   per-quarter time distribution. Cumulative totals of bonds and BOM are
+%   identical by construction; only the time profile differs.
+figure(16); clf;
+hold on;
+plot(qDates, fcc_snap_total_q,  'LineWidth', 1.8, 'DisplayName', 'snap   (recognition-day)');
+plot(qDates, fcc_bonds_total_q, 'LineWidth', 1.6, 'DisplayName', 'bonds  (recognition->payment)');
+plot(qDates, fcc_BOM_total_q,   'LineWidth', 1.4, 'DisplayName', 'BOM    (order->payment)');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on;
+datetick('x', 'yyyy');
+xlabel('Quarter end'); ylabel('SEK per quarter');
+title('PAM-flow CC: snap vs bonds vs BOM — per-quarter time distribution');
+legend('Location', 'best');
+
+% =========================================================================
+% Figure 17: Trans component — every PAM vs every industry method
+%   2x2 grid, one panel per PAM variant. Each panel plots the PAM's
+%   industry-counterpart (PAM trans+cross, since industry CC^trans absorbs
+%   the cross term inside delta-c->SEK) against M1 / M2avg / M2close trans.
+%   All panels share the same per-quarter SEK axis.
+% =========================================================================
+figure(17); clf;
+
+% --- Panel 1: PAM-stock ---
+subplot(2,2,1); hold on;
+plot(qDates, PAM_trans_plus_cross_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-stock (trans+cross)');
+plot(qDates, M1_trans_q/1e6,             'LineWidth', 1.4, 'DisplayName', 'M1 trans');
+plot(qDates, Mavg_trans_q/1e6,           'LineWidth', 1.4, 'DisplayName', 'M2avg trans');
+plot(qDates, Mclose_trans_q/1e6,         'LineWidth', 1.4, 'DisplayName', 'M2close trans');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-stock vs Industry');
+legend('Location', 'best');
+
+% --- Panel 2: PAM-flow snap ---
+subplot(2,2,2); hold on;
+plot(qDates, fcc_snap_tr_plus_cr_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow snap (trans+cross)');
+plot(qDates, M1_trans_q/1e6,            'LineWidth', 1.4, 'DisplayName', 'M1 trans');
+plot(qDates, Mavg_trans_q/1e6,          'LineWidth', 1.4, 'DisplayName', 'M2avg trans');
+plot(qDates, Mclose_trans_q/1e6,        'LineWidth', 1.4, 'DisplayName', 'M2close trans');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-flow snap vs Industry');
+legend('Location', 'best');
+
+% --- Panel 3: PAM-flow bonds ---
+subplot(2,2,3); hold on;
+plot(qDates, fcc_bonds_tr_plus_cr_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow bonds (trans+cross)');
+plot(qDates, M1_trans_q/1e6,             'LineWidth', 1.4, 'DisplayName', 'M1 trans');
+plot(qDates, Mavg_trans_q/1e6,           'LineWidth', 1.4, 'DisplayName', 'M2avg trans');
+plot(qDates, Mclose_trans_q/1e6,         'LineWidth', 1.4, 'DisplayName', 'M2close trans');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-flow bonds vs Industry');
+legend('Location', 'best');
+
+% --- Panel 4: PAM-flow BOM ---
+subplot(2,2,4); hold on;
+plot(qDates, fcc_BOM_tr_plus_cr_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow BOM (trans+cross)');
+plot(qDates, M1_trans_q/1e6,           'LineWidth', 1.4, 'DisplayName', 'M1 trans');
+plot(qDates, Mavg_trans_q/1e6,         'LineWidth', 1.4, 'DisplayName', 'M2avg trans');
+plot(qDates, Mclose_trans_q/1e6,       'LineWidth', 1.4, 'DisplayName', 'M2close trans');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-flow BOM vs Industry');
+legend('Location', 'best');
+
+sgtitle('CC^{trans} component — PAM variants vs Industry methods (per quarter)');
+
+% =========================================================================
+% Figure 18: Transl component — every PAM vs Industry transl
+%   2x2 grid, one panel per PAM variant. Industry CC^transl is identical
+%   across M1 / M2avg / M2close (all use NI x delta(EUR/SEK avg) — same
+%   formula); they're plotted as three separate lines for completeness, but
+%   they overlap exactly in the simulation.
+%   PAM transl differs across variants because the underlying base differs:
+%     PAM-stock transl   = (whole portfolio)        x delta(EUR/SEK)
+%     PAM-flow snap      = (flows at recognition)   x delta(EUR/SEK)  (per event, fixed PY)
+%     PAM-flow bonds     = (flows over rec->pay)    integrated daily
+%     PAM-flow BOM       = (flows over order->pay)  integrated daily
+% =========================================================================
+figure(18); clf;
+
+% --- Panel 1: PAM-stock ---
+subplot(2,2,1); hold on;
+plot(qDates, PAM_transl_q/1e6,    'LineWidth', 1.8, 'DisplayName', 'PAM-stock transl (portfolio x delta-EUR/SEK)');
+plot(qDates, M1_transl_q/1e6,     'LineWidth', 1.4, 'DisplayName', 'M1 transl (NI x delta-EUR/SEK)');
+plot(qDates, Mavg_transl_q/1e6,   'LineWidth', 1.4, 'DisplayName', 'M2avg transl (= M1)');
+plot(qDates, Mclose_transl_q/1e6, 'LineWidth', 1.4, 'DisplayName', 'M2close transl (= M1)');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-stock vs Industry');
+legend('Location', 'best');
+
+% --- Panel 2: PAM-flow snap ---
+subplot(2,2,2); hold on;
+plot(qDates, fcc_snap_transl_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow snap transl');
+plot(qDates, M1_transl_q/1e6,       'LineWidth', 1.4, 'DisplayName', 'M1 transl');
+plot(qDates, Mavg_transl_q/1e6,     'LineWidth', 1.4, 'DisplayName', 'M2avg transl (= M1)');
+plot(qDates, Mclose_transl_q/1e6,   'LineWidth', 1.4, 'DisplayName', 'M2close transl (= M1)');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-flow snap vs Industry');
+legend('Location', 'best');
+
+% --- Panel 3: PAM-flow bonds ---
+subplot(2,2,3); hold on;
+plot(qDates, fcc_bonds_transl_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow bonds transl');
+plot(qDates, M1_transl_q/1e6,        'LineWidth', 1.4, 'DisplayName', 'M1 transl');
+plot(qDates, Mavg_transl_q/1e6,      'LineWidth', 1.4, 'DisplayName', 'M2avg transl (= M1)');
+plot(qDates, Mclose_transl_q/1e6,    'LineWidth', 1.4, 'DisplayName', 'M2close transl (= M1)');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-flow bonds vs Industry');
+legend('Location', 'best');
+
+% --- Panel 4: PAM-flow BOM ---
+subplot(2,2,4); hold on;
+plot(qDates, fcc_BOM_transl_q/1e6, 'LineWidth', 1.8, 'DisplayName', 'PAM-flow BOM transl');
+plot(qDates, M1_transl_q/1e6,      'LineWidth', 1.4, 'DisplayName', 'M1 transl');
+plot(qDates, Mavg_transl_q/1e6,    'LineWidth', 1.4, 'DisplayName', 'M2avg transl (= M1)');
+plot(qDates, Mclose_transl_q/1e6,  'LineWidth', 1.4, 'DisplayName', 'M2close transl (= M1)');
+yline(0, ':k', 'HandleVisibility', 'off');
+hold off; grid on; datetick('x', 'yyyy', 'keepticks');
+ylabel('SEK (millions)'); title('PAM-flow BOM vs Industry');
+legend('Location', 'best');
+
+sgtitle('CC^{transl} component — PAM variants vs Industry methods (per quarter)');
 
 runExcelExport;
