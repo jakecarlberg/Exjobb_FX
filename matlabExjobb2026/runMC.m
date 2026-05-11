@@ -21,7 +21,7 @@
 % =========================================================================
 % SETTINGS
 % =========================================================================
-if ~exist('K',    'var'), K    = 10; end
+if ~exist('K',    'var'), K    = 200; end
 
 settings.dataFolder         = 'simulatedData';
 settings.bomPricing         = 'DeterministicCashFlows';
@@ -105,12 +105,38 @@ mc.CC_avg_OCI   = nan(K, nPeriods);
 mc.CC_close_TI  = nan(K, nPeriods);
 mc.CC_close_OCI = nan(K, nPeriods);
 
+% --- Flow-restricted PAM CC (performanceAttributionFlowCC) ---------------
+% snap  = single-day at recognition (algebraically = M1 CC trans)
+% bonds = lifecycle recognition -> payment
+% BOM   = lifecycle order -> payment (captures pre-invoice window)
+for mode = {'snap','bonds','BOM'}
+  m = mode{1};
+  for comp = {'trans','transl','cross','total'}
+    mc.(sprintf('flowCC_%s_%s', m, comp{1})) = nan(K, nPeriods);
+  end
+end
+
 mc.seeds       = (1:K)';
 mc.periodDates = periodDates;
 
 % =========================================================================
 % MONTE CARLO LOOP  (parfor — each worker uses its own simulatedData subfolder)
 % =========================================================================
+% Pre-load Sandvik data once — avoids slow readcell() on every iteration
+sandvikFile = fullfile('marketData', '202605_Sandvik_Data.xlsx');
+sandvikArrays.revenueGrowthPct = [NaN, 18.2, NaN(1,19)];
+sandvikArrays.grossMarginPct   = [42.5, 43.1, NaN(1,19)];
+raw    = readcell(sandvikFile, 'Sheet', 'Income Statement');
+revRow = find(cellfun(@(x) ischar(x) && strcmp(x,'Revenue growth, %'), raw(:,1)));
+gmRow  = find(cellfun(@(x) ischar(x) && strcmp(x,'Gross Margin'),      raw(:,1)));
+for col = 3:21
+  v = raw{revRow, col};
+  if isnumeric(v) && ~isnan(v), sandvikArrays.revenueGrowthPct(col) = v * 100; end
+  v = raw{gmRow,  col};
+  if isnumeric(v) && ~isnan(v), sandvikArrays.grossMarginPct(col)   = v * 100; end
+end
+fprintf('Sandvik data pre-loaded (will not be re-read per iteration).\n\n');
+
 fprintf('Starting Monte Carlo: K=%d, nQuarters=%d\n\n', K, nPeriods);
 tStart = tic;
 
@@ -118,11 +144,9 @@ tStart = tic;
 results = cell(K, 1);
 
 % Progress counter via DataQueue (parfor-safe; falls back gracefully without PCT)
-nDone = 0;
 try
   dq = parallel.pool.DataQueue;
-  afterEach(dq, @(~) fprintf('  %4d / %4d  (%.0fs elapsed)\n', ...
-    nDone + 1, K, toc(tStart)));
+  afterEach(dq, @(k) fprintf('  Seed %4d done  (%.0fs elapsed)\n', k, toc(tStart)));
 catch
   dq = [];  % no Parallel Computing Toolbox — progress not printed per-iteration
 end
@@ -152,9 +176,15 @@ parfor k = 1:K
     'M2q_TI', nan(1, nPeriods), 'M2q_OCI', nan(1, nPeriods), ...
     'M1_CC_TI',    nan(1, nPeriods), 'M1_CC_OCI',    nan(1, nPeriods), ...
     'CC_avg_TI',   nan(1, nPeriods), 'CC_avg_OCI',   nan(1, nPeriods), ...
-    'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods));
+    'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods), ...
+    'flowCC_snap_trans',  nan(1, nPeriods), 'flowCC_snap_transl',  nan(1, nPeriods), ...
+    'flowCC_snap_cross',  nan(1, nPeriods), 'flowCC_snap_total',   nan(1, nPeriods), ...
+    'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
+    'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
+    'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
+    'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods));
 
-  createMatFilesSim(dm, k, false, wFolder);
+  createMatFilesSim(dm, k, false, wFolder, sandvikArrays);
 
   try
     dc = createDataCompany(dm, localSettings);
@@ -203,12 +233,28 @@ parfor k = 1:K
     r.CC_close_TI(1:P) = m1.cc.close.quarterly_TI(1:P)';
     r.CC_close_OCI(1:P)= m1.cc.close.quarterly_OCI(1:P)';
 
+    % --- Flow-restricted PAM CC (snap / bonds / BOM) ----------------------
+    fcc = performanceAttributionFlowCC(dm, dc, pnl);
+    Pf  = min(length(fcc.snap.total_quarterly), nPeriods);
+    r.flowCC_snap_trans(1:Pf)  = fcc.snap.trans_quarterly(1:Pf)';
+    r.flowCC_snap_transl(1:Pf) = fcc.snap.transl_quarterly(1:Pf)';
+    r.flowCC_snap_cross(1:Pf)  = fcc.snap.cross_quarterly(1:Pf)';
+    r.flowCC_snap_total(1:Pf)  = fcc.snap.total_quarterly(1:Pf)';
+    r.flowCC_bonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
+    r.flowCC_bonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
+    r.flowCC_bonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
+    r.flowCC_bonds_total(1:Pf)  = fcc.bonds.total_quarterly(1:Pf)';
+    r.flowCC_BOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
+    r.flowCC_BOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
+    r.flowCC_BOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
+    r.flowCC_BOM_total(1:Pf)    = fcc.BOM.total_quarterly(1:Pf)';
+
   catch ME
     fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
   end
 
   results{k} = r;
-  send(dq, k);
+  if ~isempty(dq), send(dq, k); end
 end
 
 % Assemble results into mc struct
@@ -229,6 +275,13 @@ for k = 1:K
   mc.M1_CC_TI(k,:)    = r.M1_CC_TI;    mc.M1_CC_OCI(k,:)    = r.M1_CC_OCI;
   mc.CC_avg_TI(k,:)   = r.CC_avg_TI;   mc.CC_avg_OCI(k,:)   = r.CC_avg_OCI;
   mc.CC_close_TI(k,:) = r.CC_close_TI; mc.CC_close_OCI(k,:) = r.CC_close_OCI;
+  for mode = {'snap','bonds','BOM'}
+    m = mode{1};
+    for comp = {'trans','transl','cross','total'}
+      fn = sprintf('flowCC_%s_%s', m, comp{1});
+      mc.(fn)(k,:) = r.(fn);
+    end
+  end
 end
 
 fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
@@ -359,3 +412,151 @@ boxplot(mc.FX_cc_total(valid,:));  ylabel('SEK');
 title('Constant-currency FX Total per quarter (Eq.4.47)');
 
 sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d)', nValid));
+
+% =========================================================================
+% ERROR TERM ANALYSIS
+% Full-period sums per iteration [nValid x 1] — basis for ME / RMSE / corr
+% =========================================================================
+
+% Helper: full-period sum per iteration
+sumV = @(field) sum(mc.(field)(valid,:), 2);
+
+PAM_TI     = sumV('FX_trans');       % PAM transactional (bonds)
+PAM_TI_BOM = sumV('FX_trans_BOM');   % PAM transactional (bonds+BOM)
+PAM_OCI    = sumV('FX_transl');      % PAM translation
+M1_TI      = sumV('M1_TI');
+M1_OCI     = sumV('M1_OCI');
+M2w_TI     = sumV('M2w_TI');   M2w_OCI = sumV('M2w_OCI');
+M2m_TI     = sumV('M2m_TI');   M2m_OCI = sumV('M2m_OCI');
+M2q_TI     = sumV('M2q_TI');   M2q_OCI = sumV('M2q_OCI');
+fSnap  = sumV('flowCC_snap_total');
+fBonds = sumV('flowCC_bonds_total');
+fBOM   = sumV('flowCC_BOM_total');
+M1_CC  = sumV('M1_CC_TI');
+
+% Error helper: [ME, RMSE, Corr] between two [nValid x 1] vectors
+errStats = @(a, b) deal(mean(a-b), sqrt(mean((a-b).^2)), corr(a, b));
+
+% =========================================================================
+% TABLE 1 — Transactional Impact: PAM vs M1 vs M2
+% =========================================================================
+fprintf('\n%s\n', repmat('=',1,90));
+fprintf('ERROR TERMS — Transactional Impact (TI), full-period sum per iteration (SEK)\n');
+fprintf('Benchmark: PAM Bonds\n');
+fprintf('%s\n', repmat('=',1,90));
+fprintf('%-30s %14s %14s %10s\n', 'Method pair', 'ME', 'RMSE', 'Corr');
+fprintf('%s\n', repmat('-',1,70));
+
+pairs_TI = {
+  'PAM bonds  vs  M1',       PAM_TI,     M1_TI;
+  'PAM bonds  vs  M2 weekly', PAM_TI,    M2w_TI;
+  'PAM bonds  vs  M2 monthly',PAM_TI,    M2m_TI;
+  'PAM bonds  vs  M2 quarterly',PAM_TI,  M2q_TI;
+  'M1         vs  M2 weekly', M1_TI,     M2w_TI;
+  'M1         vs  M2 monthly',M1_TI,     M2m_TI;
+  'M1         vs  M2 quarterly',M1_TI,   M2q_TI;
+  'PAM BOM    vs  M1',       PAM_TI_BOM, M1_TI;
+};
+for i = 1:size(pairs_TI,1)
+  [me, rmse, cr] = errStats(pairs_TI{i,2}, pairs_TI{i,3});
+  fprintf('%-30s %14.0f %14.0f %10.4f\n', pairs_TI{i,1}, me, rmse, cr);
+end
+
+% =========================================================================
+% TABLE 2 — Translation / OCI: PAM vs M1 vs M2
+% =========================================================================
+fprintf('\n%s\n', repmat('=',1,90));
+fprintf('ERROR TERMS — Translation / OCI, full-period sum per iteration (SEK)\n');
+fprintf('Benchmark: PAM Translation\n');
+fprintf('%s\n', repmat('=',1,90));
+fprintf('%-30s %14s %14s %10s\n', 'Method pair', 'ME', 'RMSE', 'Corr');
+fprintf('%s\n', repmat('-',1,70));
+
+pairs_OCI = {
+  'PAM transl  vs  M1 OCI',       PAM_OCI, M1_OCI;
+  'PAM transl  vs  M2w OCI',      PAM_OCI, M2w_OCI;
+  'PAM transl  vs  M2m OCI',      PAM_OCI, M2m_OCI;
+  'PAM transl  vs  M2q OCI',      PAM_OCI, M2q_OCI;
+  'M1 OCI      vs  M2w OCI',      M1_OCI,  M2w_OCI;
+  'M1 OCI      vs  M2m OCI',      M1_OCI,  M2m_OCI;
+  'M1 OCI      vs  M2q OCI',      M1_OCI,  M2q_OCI;
+};
+for i = 1:size(pairs_OCI,1)
+  [me, rmse, cr] = errStats(pairs_OCI{i,2}, pairs_OCI{i,3});
+  fprintf('%-30s %14.0f %14.0f %10.4f\n', pairs_OCI{i,1}, me, rmse, cr);
+end
+
+% =========================================================================
+% TABLE 3 — Constant Currency: PAM flow CC vs M1 CC
+% =========================================================================
+fprintf('\n%s\n', repmat('=',1,90));
+fprintf('ERROR TERMS — Constant Currency (CC), full-period sum per iteration (SEK)\n');
+fprintf('Benchmark: M1 CC\n');
+fprintf('%s\n', repmat('=',1,90));
+fprintf('%-30s %14s %14s %10s\n', 'Method pair', 'ME', 'RMSE', 'Corr');
+fprintf('%s\n', repmat('-',1,70));
+
+pairs_CC = {
+  'PAM flow snap  vs  M1 CC',  fSnap,  M1_CC;
+  'PAM flow bonds vs  M1 CC',  fBonds, M1_CC;
+  'PAM flow BOM   vs  M1 CC',  fBOM,   M1_CC;
+  'PAM flow bonds vs  snap',   fBonds, fSnap;
+  'PAM flow BOM   vs  bonds',  fBOM,   fBonds;
+};
+for i = 1:size(pairs_CC,1)
+  [me, rmse, cr] = errStats(pairs_CC{i,2}, pairs_CC{i,3});
+  fprintf('%-30s %14.0f %14.0f %10.4f\n', pairs_CC{i,1}, me, rmse, cr);
+end
+
+% =========================================================================
+% PLOTS — Error term distributions
+% =========================================================================
+
+% --- Figure 11: TI error distributions (PAM bonds as benchmark) ----------
+figure(11); clf;
+errors_TI = [PAM_TI-M1_TI, PAM_TI-M2w_TI, PAM_TI-M2m_TI, PAM_TI-M2q_TI] / 1e6;
+subplot(2,1,1);
+histogram(PAM_TI/1e6, 30, 'FaceColor', [0.2 0.4 0.8], 'FaceAlpha', 0.6); hold on;
+histogram(M1_TI/1e6,  30, 'FaceColor', [0.8 0.2 0.2], 'FaceAlpha', 0.6);
+histogram(M2m_TI/1e6, 30, 'FaceColor', [0.2 0.7 0.2], 'FaceAlpha', 0.6);
+legend('PAM bonds','M1','M2 monthly'); xlabel('SEK million'); ylabel('Count');
+title('TI full-period distribution across MC iterations');
+
+subplot(2,1,2);
+boxplot(errors_TI, 'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
+yline(0, 'k--'); ylabel('SEK million');
+title('TI error (PAM bonds minus method) per iteration');
+sgtitle(sprintf('Transactional Impact — Error Analysis (K=%d)', nValid));
+
+% --- Figure 12: M2 averaging window comparison (TI) ----------------------
+figure(12); clf;
+subplot(2,1,1);
+m2_errors_TI = [M1_TI-M2w_TI, M1_TI-M2m_TI, M1_TI-M2q_TI] / 1e6;
+boxplot(m2_errors_TI, 'Labels', {'M1-M2 weekly','M1-M2 monthly','M1-M2 quarterly'});
+yline(0,'k--'); ylabel('SEK million');
+title('TI: M1 vs M2 by averaging window');
+
+subplot(2,1,2);
+m2_errors_OCI = [M1_OCI-M2w_OCI, M1_OCI-M2m_OCI, M1_OCI-M2q_OCI] / 1e6;
+boxplot(m2_errors_OCI, 'Labels', {'M1-M2 weekly','M1-M2 monthly','M1-M2 quarterly'});
+yline(0,'k--'); ylabel('SEK million');
+title('OCI: M1 vs M2 by averaging window');
+sgtitle(sprintf('Industry Method Comparison: M1 vs M2 (K=%d)', nValid));
+
+% --- Figure 13: PAM flow CC modes vs M1 CC --------------------------------
+figure(13); clf;
+subplot(2,1,1);
+histogram(fSnap/1e6,  30, 'FaceColor', [0.2 0.4 0.8], 'FaceAlpha', 0.6); hold on;
+histogram(fBonds/1e6, 30, 'FaceColor', [0.8 0.2 0.2], 'FaceAlpha', 0.6);
+histogram(fBOM/1e6,   30, 'FaceColor', [0.2 0.7 0.2], 'FaceAlpha', 0.6);
+histogram(M1_CC/1e6,  30, 'FaceColor', [0.7 0.5 0.0], 'FaceAlpha', 0.6);
+legend('PAM snap','PAM bonds','PAM BOM','M1 CC');
+xlabel('SEK million'); ylabel('Count');
+title('CC full-period distribution across MC iterations');
+
+subplot(2,1,2);
+cc_errors = [fSnap-M1_CC, fBonds-M1_CC, fBOM-M1_CC] / 1e6;
+boxplot(cc_errors, 'Labels', {'snap-M1CC','bonds-M1CC','BOM-M1CC'});
+yline(0,'k--'); ylabel('SEK million');
+title('CC error (PAM flow mode minus M1 CC) per iteration');
+sgtitle(sprintf('Constant Currency — PAM flow modes vs M1 CC (K=%d)', nValid));

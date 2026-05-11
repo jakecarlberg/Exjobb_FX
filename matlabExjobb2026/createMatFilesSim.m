@@ -1,13 +1,17 @@
-function createMatFilesSim(dm, seed, verbose, dataFolder)
+function createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays)
 % createMatFilesSim  Generate synthetic multi-currency transaction data.
 %
-%   createMatFilesSim(dm, seed, verbose, dataFolder)
+%   createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays)
 %
-%   dm         - market data struct from createDataMarket (provides FX rates)
-%   seed       - RNG seed for reproducibility (default 1)
-%   verbose    - print year-by-year summary to console (default true)
-%   dataFolder - output folder for .mat files (default 'simulatedData')
-%                Use worker-specific folders when running under parfor.
+%   dm            - market data struct from createDataMarket (provides FX rates)
+%   seed          - RNG seed for reproducibility (default 1)
+%   verbose       - print year-by-year summary to console (default true)
+%   dataFolder    - output folder for .mat files (default 'simulatedData')
+%                   Use worker-specific folders when running under parfor.
+%   sandvikArrays - optional struct with fields revenueGrowthPct and
+%                   grossMarginPct (pre-loaded in runMC to avoid reading
+%                   the Excel file on every MC iteration).  If empty or
+%                   omitted the file is read as normal.
 %
 % The function generates a 21-year transaction history (2005-2025) for a
 % simulated manufacturing subsidiary.  Revenue and gross margin are
@@ -16,9 +20,10 @@ function createMatFilesSim(dm, seed, verbose, dataFolder)
 % target margin.  The function writes all .mat files to dataFolder/ and
 % is designed to be called repeatedly inside a Monte Carlo loop (runMC.m).
 
-if nargin < 2 || isempty(seed),       seed       = 1;              end
-if nargin < 3 || isempty(verbose),    verbose    = true;           end
-if nargin < 4 || isempty(dataFolder), dataFolder = 'simulatedData'; end
+if nargin < 2 || isempty(seed),          seed          = 1;              end
+if nargin < 3 || isempty(verbose),        verbose       = true;           end
+if nargin < 4 || isempty(dataFolder),     dataFolder    = 'simulatedData'; end
+if nargin < 5,                            sandvikArrays = [];             end
 
 rng(seed);
 
@@ -47,38 +52,49 @@ revenueGrowthPct = [NaN, 18.2, NaN(1,19)];  % 2005-2006 hardcoded; 2007-2025 loa
 grossMarginPct   = [42.5, 43.1, NaN(1,19)]; % 2005-2006 hardcoded; 2007-2025 loaded below
 
 % --- Load actual Sandvik revenue growth and gross margin (2007-2025) ------
-% File: marketData/202605_Sandvik_Data.xlsx, sheet: Income Statement
-% Column layout: col 1 = field name, col 2 = 2006, col 3 = 2007, ..., col 21 = 2025
-% allYears index maps directly to Excel column (both use 2005 as offset base)
-sandvikFile = fullfile('marketData', '202605_Sandvik_Data.xlsx');
-if isfile(sandvikFile)
-  raw = readcell(sandvikFile, 'Sheet', 'Income Statement');
-  revRow = find(cellfun(@(x) ischar(x) && strcmp(x, 'Revenue growth, %'), raw(:,1)));
-  gmRow  = find(cellfun(@(x) ischar(x) && strcmp(x, 'Gross Margin'),      raw(:,1)));
-  if ~isempty(revRow) && ~isempty(gmRow)
-    for col = 3:21  % col 3 = 2007, col 21 = 2025 (matches allYears index)
-      v = raw{revRow, col};
-      if isnumeric(v) && ~isnan(v), revenueGrowthPct(col) = v * 100; end
-      v = raw{gmRow, col};
-      if isnumeric(v) && ~isnan(v), grossMarginPct(col)   = v * 100; end
-    end
-    fprintf('Loaded Sandvik revenue growth and gross margin (2007-2025) from %s\n', sandvikFile);
-  else
-    error('Could not find Revenue growth or Gross Margin rows in %s', sandvikFile);
-  end
+% Pre-loaded data (sandvikArrays) is used when called from runMC to avoid
+% reading the Excel file on every MC iteration (slow readcell call).
+if ~isempty(sandvikArrays)
+  revenueGrowthPct = sandvikArrays.revenueGrowthPct;
+  grossMarginPct   = sandvikArrays.grossMarginPct;
 else
-  error('Sandvik data file not found: %s\nPlace 202605_Sandvik_Data.xlsx in the marketData/ folder.', sandvikFile);
+  % File: marketData/202605_Sandvik_Data.xlsx, sheet: Income Statement
+  % Column layout: col 1 = field name, col 2 = 2006, col 3 = 2007, ..., col 21 = 2025
+  sandvikFile = fullfile('marketData', '202605_Sandvik_Data.xlsx');
+  if isfile(sandvikFile)
+    raw = readcell(sandvikFile, 'Sheet', 'Income Statement');
+    revRow = find(cellfun(@(x) ischar(x) && strcmp(x, 'Revenue growth, %'), raw(:,1)));
+    gmRow  = find(cellfun(@(x) ischar(x) && strcmp(x, 'Gross Margin'),      raw(:,1)));
+    if ~isempty(revRow) && ~isempty(gmRow)
+      for col = 3:21  % col 3 = 2007, col 21 = 2025 (matches allYears index)
+        v = raw{revRow, col};
+        if isnumeric(v) && ~isnan(v), revenueGrowthPct(col) = v * 100; end
+        v = raw{gmRow, col};
+        if isnumeric(v) && ~isnan(v), grossMarginPct(col)   = v * 100; end
+      end
+      fprintf('Loaded Sandvik revenue growth and gross margin (2007-2025) from %s\n', sandvikFile);
+    else
+      error('Could not find Revenue growth or Gross Margin rows in %s', sandvikFile);
+    end
+  else
+    error('Sandvik data file not found: %s\nPlace 202605_Sandvik_Data.xlsx in the marketData/ folder.', sandvikFile);
+  end
 end
 
 % --- Inflation per year (%) - placeholder, update with actual data -------
 inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 
 % --- Base selling prices per product type (EUR, year 2005) ---------------
-% Normal mode:  ~100-170 orders/year  (realistic volume, slow if reused for MC)
-% Test mode:    ~20-30 orders/year    (for manual verification — alpha-calibration
-%                                      still works, but transactions are tractable)
+%
+%   ACTUAL MODE  ~100-170 orders/year  (MC production run — realistic volume,
+%                                       good statistical convergence, use with K>=100)
+%   NORMAL MODE  ~100-170 orders/year  (identical prices to actual; kept for reference)
+%   TEST MODE    ~20-30 orders/year    (manual verification — few transactions,
+%                                       easy to trace but poor statistical coverage)
+%
+baseSellPriceEUR = [1000000, 5000000, 20000000];        % ACTUAL MODE  (Type A/B/C: 1M/5M/20M EUR)
 % baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
-baseSellPriceEUR = [5000000, 25000000, 100000000];      % TEST MODE (×5 priser → ~20 orders/år)
+% baseSellPriceEUR = [5000000, 25000000, 100000000];    % TEST MODE (×5 prices → ~20 orders/yr)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -229,8 +245,13 @@ nBOM_total = sum(nOrdersPerYear);
 alphaByYear = zeros(1, nYears);
 
 for y = 1:nYears
-  % FX rates at beginning of year
+  % Average FX rates over the full calendar year (BOY to EOY).
+  % Using the annual average rather than the BOY snapshot means alpha is
+  % calibrated to match actual COGS in expectation: orders are spread
+  % uniformly across the year, so their average FX rate ≈ annual average.
+  % This eliminates the systematic GM gap caused by intra-year FX drift.
   iDmBOY = getdmInd(allDates(yearStartIdx(y)));
+  iDmEOY = getdmInd(allDates(yearEndIdx(y)));
 
   % Compute COGS per unit at alpha=1 for each product type
   cogsPerUnit = zeros(1, nTypes);
@@ -239,12 +260,13 @@ for y = 1:nYears
     compQty = typeQuantities{t};
     for j = 1:length(compIdx)
       cj = compIdx(j);
-      fxToEUR = dm.fx{compIcur(cj), iCurFunctional}(iDmBOY);
-      cogsPerUnit(t) = cogsPerUnit(t) + compPriceInit(cj) * compQty(j) * fxToEUR;
+      fxSeries = dm.fx{compIcur(cj), iCurFunctional}(iDmBOY:iDmEOY);
+      fxAvg    = nanmean(fxSeries);
+      cogsPerUnit(t) = cogsPerUnit(t) + compPriceInit(cj) * compQty(j) * fxAvg;
     end
   end
 
-  % Expected number of each type this year
+  % Exact type counts (deterministic since type assignment uses fixed counts)
   nPerType = round(productMixWeights * nOrdersPerYear(y));
   nPerType(end) = nOrdersPerYear(y) - sum(nPerType(1:end-1));  % fix rounding
 
@@ -330,29 +352,43 @@ for y = 1:nYears
   alpha = alphaByYear(y);
   nOrdersY = nOrdersPerYear(y);
 
-  % --- Determine product types for this year (random draw) ---------------
+  % --- Determine product types for this year (fixed counts, random order) -
+  % Fix the count of each type to match productMixWeights exactly (same
+  % approach as currency assignment below).  This ensures that annual revenue
+  % in EUR is deterministic across MC seeds — only the ordering and timing
+  % of orders varies.  Without this, the ~6.6M EUR per-order price std-dev
+  % across types gives ~13% CV in annual revenue (too noisy for MC error terms).
+  targetTypeCount = round(productMixWeights * nOrdersY);
+  targetTypeCount(end) = nOrdersY - sum(targetTypeCount(1:end-1));  % fix rounding
   typeAssignment = zeros(nOrdersY, 1);
-  cdf = cumsum(productMixWeights);
-  for i = 1:nOrdersY
-    typeAssignment(i) = find(rand() <= cdf, 1, 'first');
-  end
-
-  % --- Assign sales currencies to meet exposure ratios -------------------
-  saleWeightsNorm = saleExposurePct / sum(saleExposurePct);
-  targetCurCount  = round(saleWeightsNorm * nOrdersY);
-  % Fix rounding: adjust largest bucket
-  diff = nOrdersY - sum(targetCurCount);
-  [~, iMax] = max(targetCurCount);
-  targetCurCount(iMax) = targetCurCount(iMax) + diff;
-
-  % Build shuffled currency assignment vector
-  curAssignment = zeros(nOrdersY, 1);
   idx = 1;
-  for c = 1:length(saleCurNames)
-    curAssignment(idx:idx+targetCurCount(c)-1) = c;
-    idx = idx + targetCurCount(c);
+  for t = 1:nTypes
+    typeAssignment(idx:idx+targetTypeCount(t)-1) = t;
+    idx = idx + targetTypeCount(t);
   end
-  curAssignment = curAssignment(randperm(nOrdersY));
+  typeAssignment = typeAssignment(randperm(nOrdersY));
+
+  % --- Assign sales currencies to match revenue exposure targets ----------
+  % Assign by REVENUE (not by order count) so that the actual % of revenue
+  % per currency matches saleExposurePct regardless of product-type mix.
+  % Without this, a small currency (e.g. ZAR at 5% of orders) that happens
+  % to land a Type C order (20M EUR) will show 20%+ of revenue that year.
+  %
+  % Algorithm: shuffle order indices, then greedily assign each order to
+  % the currency that is most below its revenue target. This ensures revenue
+  % shares are matched exactly while keeping the timing assignment random.
+  saleWeightsNorm = saleExposurePct / sum(saleExposurePct);
+  orderRevenue    = arrayfun(@(t) sellPriceByYear(t, y), typeAssignment);
+  targetRevByCur  = saleWeightsNorm * sum(orderRevenue);
+  cumRevByCur     = zeros(1, length(saleCurNames));
+  curAssignment   = zeros(nOrdersY, 1);
+  permIdx         = randperm(nOrdersY);
+  for k = 1:nOrdersY
+    i = permIdx(k);
+    [~, bestCur] = max(targetRevByCur - cumRevByCur);
+    curAssignment(i) = bestCur;
+    cumRevByCur(bestCur) = cumRevByCur(bestCur) + orderRevenue(i);
+  end
 
   % --- Manufacturing start dates: uniform random within year -------------
   % bufferStart: year 1 — procurement must not predate dm.dates(1)
