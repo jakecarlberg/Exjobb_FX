@@ -414,6 +414,110 @@ title('Constant-currency FX Total per quarter (Eq.4.47)');
 sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d)', nValid));
 
 % =========================================================================
+% MEAN VALUE TIME SERIES — PAM vs Industry methods
+% For each quarter: mean across all K valid iterations.
+% Mirror of runPA figures 10-11 but averaged over MC seeds.
+% =========================================================================
+
+% Extract quarterly matrices [nValid x nPeriods] (needed here before error section)
+qV = @(field) mc.(field)(valid,:);
+
+PAM_TI_q_ts      = qV('FX_trans');
+PAM_TI_BOM_q_ts  = qV('FX_trans_BOM');
+PAM_OCI_q_ts     = qV('FX_transl');
+M1_TI_q_ts       = qV('M1_TI');       M1_OCI_q_ts  = qV('M1_OCI');
+M2m_TI_q_ts      = qV('M2m_TI');      M2m_OCI_q_ts = qV('M2m_OCI');
+fBOM_q_ts        = qV('flowCC_BOM_total');
+fBonds_q_ts      = qV('flowCC_bonds_total');
+CC_avg_ts        = qV('CC_avg_TI')  + qV('CC_avg_OCI');
+CC_close_ts      = qV('CC_close_TI') + qV('CC_close_OCI');
+M1_CC_ts         = qV('M1_CC_TI')   + qV('M1_CC_OCI');
+
+% Mean across K iterations for each quarter
+muPAM_TI    = mean(PAM_TI_q_ts,    1) / 1e6;
+muPAM_BOM   = mean(PAM_TI_BOM_q_ts,1) / 1e6;
+muPAM_OCI   = mean(PAM_OCI_q_ts,   1) / 1e6;
+muM1_TI     = mean(M1_TI_q_ts,     1) / 1e6;
+muM2m_TI    = mean(M2m_TI_q_ts,    1) / 1e6;
+muM1_OCI    = mean(M1_OCI_q_ts,    1) / 1e6;
+muM2m_OCI   = mean(M2m_OCI_q_ts,   1) / 1e6;
+muFBOM      = mean(fBOM_q_ts,       1) / 1e6;
+muFBonds    = mean(fBonds_q_ts,     1) / 1e6;
+muCC_avg    = mean(CC_avg_ts,       1) / 1e6;
+muCC_close  = mean(CC_close_ts,     1) / 1e6;
+muM1_CC     = mean(M1_CC_ts,        1) / 1e6;
+
+qx = 1:nPeriods; % x-axis: quarter index
+
+% --- Figure 20: Non-cumulative mean values per quarter -------------------
+figure(20); clf;
+
+subplot(3,1,1); hold on;
+plot(qx, muPAM_TI,  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM (bonds)');
+plot(qx, muPAM_BOM, 'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM (BOM)');
+plot(qx, muM1_TI,   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
+plot(qx, muM2m_TI,  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
+yline(0, 'k--', 'LineWidth', 0.8);
+set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
+ylabel('SEK million'); title('Transactional Impact (TI) — Mean per quarter');
+legend('Location', 'Best'); grid on;
+
+subplot(3,1,2); hold on;
+plot(qx, muPAM_OCI,  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM');
+plot(qx, muM1_OCI,   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
+plot(qx, muM2m_OCI,  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
+yline(0, 'k--', 'LineWidth', 0.8);
+set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
+ylabel('SEK million'); title('Translation / OCI — Mean per quarter');
+legend('Location', 'Best'); grid on;
+
+subplot(3,1,3); hold on;
+plot(qx, muFBOM,    'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM-flow BOM');
+plot(qx, muFBonds,  'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM-flow Bonds');
+plot(qx, muM1_CC,   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC (M1/avg)');
+plot(qx, muCC_close,'m-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC close');
+yline(0, 'k--', 'LineWidth', 0.8);
+set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
+ylabel('SEK million'); title('Constant Currency (CC) — Mean per quarter');
+legend('Location', 'Best'); grid on;
+
+sgtitle(sprintf('PAM vs Industry — Mean quarterly values (K=%d iterations)', nValid));
+
+% --- Figure 21: Cumulative mean values -----------------------------------
+figure(21); clf;
+
+subplot(3,1,1); hold on;
+plot(qx, cumsum(muPAM_TI),  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM (bonds)');
+plot(qx, cumsum(muPAM_BOM), 'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM (BOM)');
+plot(qx, cumsum(muM1_TI),   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
+plot(qx, cumsum(muM2m_TI),  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
+yline(0, 'k--', 'LineWidth', 0.8);
+set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
+ylabel('SEK million'); title('Transactional Impact (TI) — Cumulative mean');
+legend('Location', 'Best'); grid on;
+
+subplot(3,1,2); hold on;
+plot(qx, cumsum(muPAM_OCI),  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM');
+plot(qx, cumsum(muM1_OCI),   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
+plot(qx, cumsum(muM2m_OCI),  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
+yline(0, 'k--', 'LineWidth', 0.8);
+set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
+ylabel('SEK million'); title('Translation / OCI — Cumulative mean');
+legend('Location', 'Best'); grid on;
+
+subplot(3,1,3); hold on;
+plot(qx, cumsum(muFBOM),    'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM-flow BOM');
+plot(qx, cumsum(muFBonds),  'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM-flow Bonds');
+plot(qx, cumsum(muM1_CC),   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC (M1/avg)');
+plot(qx, cumsum(muCC_close),'m-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC close');
+yline(0, 'k--', 'LineWidth', 0.8);
+set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
+ylabel('SEK million'); title('Constant Currency (CC) — Cumulative mean');
+legend('Location', 'Best'); grid on;
+
+sgtitle(sprintf('PAM vs Industry — Cumulative mean values (K=%d iterations)', nValid));
+
+% =========================================================================
 % ERROR TERM ANALYSIS
 % Quarterly errors [nValid x nPeriods] — statistics over all K*nPeriods
 % observations, preserving the full quarterly structure.
