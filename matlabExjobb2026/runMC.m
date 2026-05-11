@@ -415,89 +415,111 @@ sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d)', nValid));
 
 % =========================================================================
 % ERROR TERM ANALYSIS
-% Quarterly errors [nValid x nPeriods] — ME and RMSE over all K*nPeriods
+% Quarterly errors [nValid x nPeriods] — statistics over all K*nPeriods
 % observations, preserving the full quarterly structure.
-% Summing over 19 years before comparing would let errors cancel across
-% time periods and hide systematic quarterly biases.
+% Columns: ME | Std | 95% CI | RMSE  (all in SEK)
+%   ME   = mean error — systematic bias           Eq. (me)
+%   Std  = std dev of errors — variability        Eq. (std)
+%   95%CI= ME ± 1.96*Std/sqrt(N) via CLT         Eq. (ci)
+%   RMSE = sqrt(ME^2 + Std^2) approx             Eq. (rmse)
 % =========================================================================
 
 % Extract quarterly matrices [nValid x nPeriods]
 qV = @(field) mc.(field)(valid,:);
 
-PAM_TI_q     = qV('FX_trans');
-PAM_TI_BOM_q = qV('FX_trans_BOM');
-PAM_OCI_q    = qV('FX_transl');
-M1_TI_q      = qV('M1_TI');
-M1_OCI_q     = qV('M1_OCI');
-M2w_TI_q     = qV('M2w_TI');   M2w_OCI_q = qV('M2w_OCI');
-M2m_TI_q     = qV('M2m_TI');   M2m_OCI_q = qV('M2m_OCI');
-M2q_TI_q     = qV('M2q_TI');   M2q_OCI_q = qV('M2q_OCI');
-fSnap_q      = qV('flowCC_snap_total');
-fBonds_q     = qV('flowCC_bonds_total');
-fBOM_q       = qV('flowCC_BOM_total');
-M1_CC_q      = qV('M1_CC_TI');
+PAM_TI_q      = qV('FX_trans');
+PAM_TI_BOM_q  = qV('FX_trans_BOM');
+PAM_OCI_q     = qV('FX_transl');
+M1_TI_q       = qV('M1_TI');         M1_OCI_q    = qV('M1_OCI');
+M2w_TI_q      = qV('M2w_TI');        M2w_OCI_q   = qV('M2w_OCI');
+M2m_TI_q      = qV('M2m_TI');        M2m_OCI_q   = qV('M2m_OCI');
+M2q_TI_q      = qV('M2q_TI');        M2q_OCI_q   = qV('M2q_OCI');
+fSnap_q       = qV('flowCC_snap_total');
+fBonds_q      = qV('flowCC_bonds_total');
+fBOM_q        = qV('flowCC_BOM_total');
+M1_CC_q       = qV('M1_CC_TI');
+CC_avg_TI_q   = qV('CC_avg_TI');
+CC_close_TI_q = qV('CC_close_TI');
+M1_CC_OCI_q   = qV('M1_CC_OCI');
+CC_avg_OCI_q  = qV('CC_avg_OCI');
+CC_close_OCI_q= qV('CC_close_OCI');
 
-% Error stats over all K*nPeriods quarterly observations.
-% ME      = mean quarterly error (systematic bias)       Eq. (me)
-% CI      = 95% CI for ME via CLT: ME ± 1.96*s/sqrt(N)  Eq. (ci)
-% RMSE    = root mean squared quarterly error             Eq. (rmse)
-% Corr    = correlation across all K*nPeriods obs
-% KDE bw  = Silverman rule: 0.9*min(sigma,IQR/1.34)*N^(-1/5)  Eq. (silverman)
 printRow = @(label, A, B) printErrRow(label, A(:), B(:));
 kdeplot  = @(ax, e, lbl, col) plotSilvermanKDE(ax, e, lbl, col);
+N_obs    = nValid * nPeriods;
 
 % =========================================================================
-% TABLE 1 — Transactional Impact: PAM vs M1 vs M2
+% TABLE 1 — Transactional Impact (TI): PAM benchmark vs all methods
 % =========================================================================
-fprintf('\n%s\n', repmat('=',1,95));
+fprintf('\n');
 fprintf('ERROR TERMS — Transactional Impact (TI)\n');
-fprintf('Based on %d quarterly observations (%d iterations x %d quarters)\n', ...
-  nValid*nPeriods, nValid, nPeriods);
-fprintf('Benchmark: PAM Bonds\n');
+fprintf('N = %d quarterly obs (%d iterations x %d quarters) | Benchmark: PAM Bonds\n', ...
+  N_obs, nValid, nPeriods);
 printHeader();
-
-printRow('PAM bonds  vs  M1',          PAM_TI_q,     M1_TI_q);
-printRow('PAM bonds  vs  M2 weekly',   PAM_TI_q,     M2w_TI_q);
-printRow('PAM bonds  vs  M2 monthly',  PAM_TI_q,     M2m_TI_q);
-printRow('PAM bonds  vs  M2 quarterly',PAM_TI_q,     M2q_TI_q);
-printRow('M1         vs  M2 weekly',   M1_TI_q,      M2w_TI_q);
-printRow('M1         vs  M2 monthly',  M1_TI_q,      M2m_TI_q);
-printRow('M1         vs  M2 quarterly',M1_TI_q,      M2q_TI_q);
-printRow('PAM BOM    vs  M1',          PAM_TI_BOM_q, M1_TI_q);
+printRow('PAM bonds  vs  M1',           PAM_TI_q,     M1_TI_q);
+printRow('PAM bonds  vs  M2 weekly',    PAM_TI_q,     M2w_TI_q);
+printRow('PAM bonds  vs  M2 monthly',   PAM_TI_q,     M2m_TI_q);
+printRow('PAM bonds  vs  M2 quarterly', PAM_TI_q,     M2q_TI_q);
+printRow('PAM BOM    vs  M1',           PAM_TI_BOM_q, M1_TI_q);
+printRow('PAM BOM    vs  M2 weekly',    PAM_TI_BOM_q, M2w_TI_q);
+printRow('PAM BOM    vs  M2 monthly',   PAM_TI_BOM_q, M2m_TI_q);
+printRow('PAM BOM    vs  M2 quarterly', PAM_TI_BOM_q, M2q_TI_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  Industry vs industry\n');
+printRow('M1         vs  M2 weekly',    M1_TI_q,      M2w_TI_q);
+printRow('M1         vs  M2 monthly',   M1_TI_q,      M2m_TI_q);
+printRow('M1         vs  M2 quarterly', M1_TI_q,      M2q_TI_q);
 
 % =========================================================================
-% TABLE 2 — Translation / OCI: PAM vs M1 vs M2
+% TABLE 2 — Translation / OCI: PAM benchmark vs all methods
 % =========================================================================
-fprintf('\n%s\n', repmat('=',1,105));
+fprintf('\n');
 fprintf('ERROR TERMS — Translation / OCI\n');
-fprintf('Based on %d quarterly observations (%d iterations x %d quarters)\n', ...
-  nValid*nPeriods, nValid, nPeriods);
-fprintf('Benchmark: PAM Translation\n');
+fprintf('N = %d quarterly obs (%d iterations x %d quarters) | Benchmark: PAM Translation\n', ...
+  N_obs, nValid, nPeriods);
 printHeader();
-
-printRow('PAM transl  vs  M1 OCI',    PAM_OCI_q, M1_OCI_q);
-printRow('PAM transl  vs  M2 weekly', PAM_OCI_q, M2w_OCI_q);
-printRow('PAM transl  vs  M2 monthly',PAM_OCI_q, M2m_OCI_q);
-printRow('PAM transl  vs  M2 qtrly', PAM_OCI_q, M2q_OCI_q);
-printRow('M1 OCI      vs  M2 weekly', M1_OCI_q,  M2w_OCI_q);
-printRow('M1 OCI      vs  M2 monthly',M1_OCI_q,  M2m_OCI_q);
-printRow('M1 OCI      vs  M2 qtrly', M1_OCI_q,  M2q_OCI_q);
+printRow('PAM transl  vs  M1 OCI',       PAM_OCI_q, M1_OCI_q);
+printRow('PAM transl  vs  M2 weekly',    PAM_OCI_q, M2w_OCI_q);
+printRow('PAM transl  vs  M2 monthly',   PAM_OCI_q, M2m_OCI_q);
+printRow('PAM transl  vs  M2 quarterly', PAM_OCI_q, M2q_OCI_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  Industry vs industry\n');
+printRow('M1 OCI      vs  M2 weekly',    M1_OCI_q,  M2w_OCI_q);
+printRow('M1 OCI      vs  M2 monthly',   M1_OCI_q,  M2m_OCI_q);
+printRow('M1 OCI      vs  M2 quarterly', M1_OCI_q,  M2q_OCI_q);
 
 % =========================================================================
-% TABLE 3 — Constant Currency: PAM flow CC vs M1 CC
+% TABLE 3 — Constant Currency (CC): PAM flow modes vs all industry CC
 % =========================================================================
-fprintf('\n%s\n', repmat('=',1,105));
+fprintf('\n');
 fprintf('ERROR TERMS — Constant Currency (CC)\n');
-fprintf('Based on %d quarterly observations (%d iterations x %d quarters)\n', ...
-  nValid*nPeriods, nValid, nPeriods);
-fprintf('Benchmark: M1 CC\n');
+fprintf('N = %d quarterly obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
+fprintf('PAM flow CC modes (snap/bonds/BOM) vs all industry CC variants\n');
 printHeader();
-
-printRow('PAM flow snap  vs  M1 CC',  fSnap_q,  M1_CC_q);
-printRow('PAM flow bonds vs  M1 CC',  fBonds_q, M1_CC_q);
-printRow('PAM flow BOM   vs  M1 CC',  fBOM_q,   M1_CC_q);
-printRow('PAM flow bonds vs  snap',   fBonds_q, fSnap_q);
-printRow('PAM flow BOM   vs  bonds',  fBOM_q,   fBonds_q);
+fprintf('  PAM snap (= recognition-day rate)\n');
+printRow('snap  vs  M1 CC (delivery rate)',  fSnap_q, M1_CC_q);
+printRow('snap  vs  CC avg (monthly avg)',   fSnap_q, CC_avg_TI_q);
+printRow('snap  vs  CC close (period open)', fSnap_q, CC_close_TI_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM bonds (recognition to payment)\n');
+printRow('bonds vs  M1 CC (delivery rate)',  fBonds_q, M1_CC_q);
+printRow('bonds vs  CC avg (monthly avg)',   fBonds_q, CC_avg_TI_q);
+printRow('bonds vs  CC close (period open)', fBonds_q, CC_close_TI_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM BOM (order to payment)\n');
+printRow('BOM   vs  M1 CC (delivery rate)',  fBOM_q, M1_CC_q);
+printRow('BOM   vs  CC avg (monthly avg)',   fBOM_q, CC_avg_TI_q);
+printRow('BOM   vs  CC close (period open)', fBOM_q, CC_close_TI_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  Industry CC vs industry CC\n');
+printRow('M1 CC       vs  CC avg',           M1_CC_q,       CC_avg_TI_q);
+printRow('M1 CC       vs  CC close',         M1_CC_q,       CC_close_TI_q);
+printRow('CC avg      vs  CC close',          CC_avg_TI_q,   CC_close_TI_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM flow modes vs each other\n');
+printRow('snap  vs  bonds',                  fSnap_q,  fBonds_q);
+printRow('snap  vs  BOM',                    fSnap_q,  fBOM_q);
+printRow('bonds vs  BOM',                    fBonds_q, fBOM_q);
 
 % =========================================================================
 % PLOTS — Quarterly error distributions
@@ -549,10 +571,11 @@ err_bonds = (fBonds_q - M1_CC_q) / 1e6;
 err_BOM   = (fBOM_q   - M1_CC_q) / 1e6;
 
 subplot(2,1,1);
-boxplot([err_snap(:), err_bonds(:), err_BOM(:)], ...
-  'Labels', {'snap-M1CC','bonds-M1CC','BOM-M1CC'});
+boxplot([err_snap(:), err_bonds(:), err_BOM(:), ...
+         ((fSnap_q-CC_avg_TI_q)/1e6)(:), ((fBonds_q-CC_avg_TI_q)/1e6)(:)], ...
+  'Labels', {'snap-M1','bonds-M1','BOM-M1','snap-avg','bonds-avg'});
 yline(0,'k--'); ylabel('SEK million');
-title(sprintf('CC quarterly error vs M1 CC (%d obs each)', nValid*nPeriods));
+title(sprintf('CC quarterly error distribution (%d obs each)', nValid*nPeriods));
 
 subplot(2,1,2);
 plot(mean(err_snap,1),  'b-o', 'MarkerSize', 3); hold on;
@@ -596,35 +619,59 @@ xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on;
 title(sprintf('OCI error KDE — Silverman bandwidth (N=%d obs)', nValid*nPeriods));
 
-% --- Figure 16: CC KDE ---------------------------------------------------
+% --- Figure 16: CC KDE — PAM flow modes vs M1 CC -------------------------
+err_snap_M1CC  = (fSnap_q  - M1_CC_q)       / 1e6;
+err_bonds_M1CC = (fBonds_q - M1_CC_q)        / 1e6;
+err_BOM_M1CC   = (fBOM_q   - M1_CC_q)        / 1e6;
 figure(16); clf; hold on;
-kdeplot(gca, err_snap(:),  'snap vs M1 CC',  colors{1});
-kdeplot(gca, err_bonds(:), 'bonds vs M1 CC', colors{2});
-kdeplot(gca, err_BOM(:),   'BOM vs M1 CC',   colors{3});
+kdeplot(gca, err_snap_M1CC(:),  'snap vs M1 CC',  colors{1});
+kdeplot(gca, err_bonds_M1CC(:), 'bonds vs M1 CC', colors{2});
+kdeplot(gca, err_BOM_M1CC(:),   'BOM vs M1 CC',   colors{3});
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on;
-title(sprintf('CC error KDE — Silverman bandwidth (N=%d obs)', nValid*nPeriods));
+title(sprintf('CC error KDE: PAM flow modes vs M1 CC (N=%d obs)', nValid*nPeriods));
+
+% --- Figure 17: CC KDE — PAM flow modes vs CC avg ------------------------
+err_snap_avg  = (fSnap_q  - CC_avg_TI_q) / 1e6;
+err_bonds_avg = (fBonds_q - CC_avg_TI_q) / 1e6;
+err_BOM_avg   = (fBOM_q   - CC_avg_TI_q) / 1e6;
+figure(17); clf; hold on;
+kdeplot(gca, err_snap_avg(:),  'snap vs CC avg',  colors{1});
+kdeplot(gca, err_bonds_avg(:), 'bonds vs CC avg', colors{2});
+kdeplot(gca, err_BOM_avg(:),   'BOM vs CC avg',   colors{3});
+xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
+legend('Location','Best'); grid on;
+title(sprintf('CC error KDE: PAM flow modes vs CC avg (N=%d obs)', nValid*nPeriods));
+
+% --- Figure 18: CC KDE — industry CC methods vs each other ---------------
+err_M1_avg   = (M1_CC_q - CC_avg_TI_q)   / 1e6;
+err_M1_close = (M1_CC_q - CC_close_TI_q) / 1e6;
+figure(18); clf; hold on;
+kdeplot(gca, err_M1_avg(:),   'M1 CC vs CC avg',   colors{1});
+kdeplot(gca, err_M1_close(:), 'M1 CC vs CC close', colors{2});
+xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
+legend('Location','Best'); grid on;
+title(sprintf('CC error KDE: industry CC variants vs each other (N=%d obs)', nValid*nPeriods));
 
 % =========================================================================
 % LOCAL FUNCTIONS
 % =========================================================================
 function printHeader()
-  fprintf('%s\n', repmat('=',1,105));
-  fprintf('%-32s %14s   %-27s  %14s  %8s\n', ...
-    'Method pair','ME (SEK)','95% CI (SEK)','RMSE (SEK)','Corr');
-  fprintf('%s\n', repmat('-',1,105));
+  fprintf('%s\n', repmat('=',1,112));
+  fprintf('%-34s %12s %12s   %-27s  %12s\n', ...
+    'Method pair', 'ME (SEK)', 'Std (SEK)', '95% CI (SEK)', 'RMSE (SEK)');
+  fprintf('%s\n', repmat('-',1,112));
 end
 
 function printErrRow(label, A, B)
   e     = A - B;
   N     = numel(e);
   me    = mean(e);
-  rmse  = sqrt(mean(e.^2));
   s     = std(e);
+  rmse  = sqrt(mean(e.^2));
   ci_hw = 1.96 * s / sqrt(N);
-  cr    = corr(A, B);
-  fprintf('%-32s %14.0f   [%12.0f, %12.0f]  %14.0f  %8.4f\n', ...
-    label, me, me-ci_hw, me+ci_hw, rmse, cr);
+  fprintf('%-34s %12.0f %12.0f   [%12.0f, %12.0f]  %12.0f\n', ...
+    label, me, s, me-ci_hw, me+ci_hw, rmse);
 end
 
 function plotSilvermanKDE(ax, e, lbl, col)
