@@ -552,13 +552,13 @@ sgtitle(sprintf('Transactional Impact — Quarterly Error Analysis (K=%d)', nVal
 % --- Figure 12: M2 averaging window comparison ----------------------------
 figure(12); clf;
 subplot(2,1,1);
-m2e_TI = [(M1_TI_q-M2w_TI_q)(:), (M1_TI_q-M2m_TI_q)(:), (M1_TI_q-M2q_TI_q)(:)] / 1e6;
+m2e_TI = [reshape(M1_TI_q-M2w_TI_q,[],1), reshape(M1_TI_q-M2m_TI_q,[],1), reshape(M1_TI_q-M2q_TI_q,[],1)] / 1e6;
 boxplot(m2e_TI, 'Labels', {'M1-M2 weekly','M1-M2 monthly','M1-M2 quarterly'});
 yline(0,'k--'); ylabel('SEK million');
 title(sprintf('TI: M1 vs M2 by averaging window (%d quarterly obs)', nValid*nPeriods));
 
 subplot(2,1,2);
-m2e_OCI = [(M1_OCI_q-M2w_OCI_q)(:), (M1_OCI_q-M2m_OCI_q)(:), (M1_OCI_q-M2q_OCI_q)(:)] / 1e6;
+m2e_OCI = [reshape(M1_OCI_q-M2w_OCI_q,[],1), reshape(M1_OCI_q-M2m_OCI_q,[],1), reshape(M1_OCI_q-M2q_OCI_q,[],1)] / 1e6;
 boxplot(m2e_OCI, 'Labels', {'M1-M2 weekly','M1-M2 monthly','M1-M2 quarterly'});
 yline(0,'k--'); ylabel('SEK million');
 title(sprintf('OCI: M1 vs M2 by averaging window (%d quarterly obs)', nValid*nPeriods));
@@ -572,7 +572,7 @@ err_BOM   = (fBOM_q   - M1_CC_q) / 1e6;
 
 subplot(2,1,1);
 boxplot([err_snap(:), err_bonds(:), err_BOM(:), ...
-         ((fSnap_q-CC_avg_TI_q)/1e6)(:), ((fBonds_q-CC_avg_TI_q)/1e6)(:)], ...
+         reshape((fSnap_q-CC_avg_TI_q)/1e6,[],1), reshape((fBonds_q-CC_avg_TI_q)/1e6,[],1)], ...
   'Labels', {'snap-M1','bonds-M1','BOM-M1','snap-avg','bonds-avg'});
 yline(0,'k--'); ylabel('SEK million');
 title(sprintf('CC quarterly error distribution (%d obs each)', nValid*nPeriods));
