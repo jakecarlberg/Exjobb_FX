@@ -1,22 +1,22 @@
-% runMC  Monte Carlo driver — PAM + Method 1 + Method 2 FX benchmark analysis
+% runMC  Monte Carlo driver — PAM + Method 1 + Method 2 FX analysis
 %
 % Runs K iterations of the full pipeline:
 %   createMatFilesSim -> createDataCompany -> buildPA -> performanceAttribution
 %                                          -> buildBalanceSheet/buildFunctionalPnL
 %                                          -> computeMethod1 / computeMethod2
 %
-% Market data (dm) is loaded once and kept fixed across all iterations,
-% consistent with the thesis (Section 4.2.1): stochastic transaction
-% datasets, fixed historical exchange rate series 2005-2025.
+% Market data (dm) is loaded once and kept fixed across all iterations.
+% Transaction datasets are randomised per seed.
 %
-% bs and pnl (shared accounting core) are computed once per iteration and
-% passed to both computeMethod1 and computeMethod2 — no redundant work.
+% bs and pnl are computed once per iteration and passed to both industry
+% methods to avoid redundant work.
 %
 % Results are stored per quarter [K x nPeriods] for all methods.
+% Each seed is saved to mc_checkpoints/ so a run can resume after interruption.
 %
 % Usage:
-%   runMC              % default K=100
-%   K = 500; runMC     % override before running
+%   runMC              % default K=200
+%   K = 1000; runMC    % override before running
 
 % =========================================================================
 % SETTINGS
@@ -30,8 +30,7 @@ settings.startDate          = datenum(2007,1,1);  % Change to 2005 when FX data 
 settings.endDate            = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
-% Thesis currencies only (Table 4.5 + procurement + functional/presentation)
-% INR dropped due to limited yield curve history (starts Nov 2010)
+% Currencies used in simulation (INR excluded — yield curve history too short)
 settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','SEK','USD','ZAR'};
 
 marketDataSet = 'reutersZero';
@@ -70,21 +69,21 @@ end
 % =========================================================================
 
 % --- PAM benchmarks -------------------------------------------------------
-mc.FX_trans       = nan(K, nPeriods);   % Transactional FX — Bonds only (Eq. 4.45)
+mc.FX_trans       = nan(K, nPeriods);   % Transactional FX — Bonds only
 mc.FX_trans_BOM   = nan(K, nPeriods);   % Transactional FX — Bonds + BOM
-mc.FX_transl      = nan(K, nPeriods);   % Translation FX per quarter   (Eq. 4.46)
-% PAM CC three-way decomposition (Setup A): total = trans + transl + cross
-mc.FX_cc_total    = nan(K, nPeriods);   % CC Total per quarter (Eq. 4.47)
-mc.FX_cc_trans    = nan(K, nPeriods);   % CC Pure Transaction (foreign at frozen EUR/SEK)
-mc.FX_cc_transl   = nan(K, nPeriods);   % CC Pure Translation (EUR/SEK at frozen foreign)
-mc.FX_cc_cross    = nan(K, nPeriods);   % CC Cross-rate term (Δfor × ΔEUR/SEK)
+mc.FX_transl      = nan(K, nPeriods);   % Translation FX per quarter
+% PAM CC three-way decomposition: total = trans + transl + cross
+mc.FX_cc_total    = nan(K, nPeriods);   % CC Total per quarter
+mc.FX_cc_trans    = nan(K, nPeriods);   % CC Pure Transaction (foreign rates frozen)
+mc.FX_cc_transl   = nan(K, nPeriods);   % CC Pure Translation (EUR/SEK frozen)
+mc.FX_cc_cross    = nan(K, nPeriods);   % CC Cross-rate term
 mc.FX_trans_CC_LY  = nan(K, nPeriods);
 mc.FX_transl_CC_LY = nan(K, nPeriods);
 mc.FX_cc_LY_total  = nan(K, nPeriods);
 
 % --- Method 1 (actual daily rate) ----------------------------------------
-mc.M1_TI  = nan(K, nPeriods);   % Transactional Impact (Eq. 4.21)
-mc.M1_OCI = nan(K, nPeriods);   % Translation Impact / OCI (Eq. 4.22-4.25)
+mc.M1_TI  = nan(K, nPeriods);   % Transactional Impact
+mc.M1_OCI = nan(K, nPeriods);   % Translation Impact / OCI
 
 % --- Method 2 (sub-period average rate, 3 variants) ----------------------
 mc.M2w_TI  = nan(K, nPeriods);  % weekly avg — TI
@@ -106,9 +105,9 @@ mc.CC_close_TI  = nan(K, nPeriods);
 mc.CC_close_OCI = nan(K, nPeriods);
 
 % --- Flow-restricted PAM CC (performanceAttributionFlowCC) ---------------
-% snap  = single-day at recognition (algebraically = M1 CC trans)
-% bonds = lifecycle recognition -> payment
-% BOM   = lifecycle order -> payment (captures pre-invoice window)
+% snap  = rate at recognition date
+% bonds = rate over recognition -> payment window
+% BOM   = rate over order -> payment window
 for mode = {'snap','bonds','BOM'}
   m = mode{1};
   for comp = {'trans','transl','cross','total'}
@@ -137,123 +136,143 @@ for col = 3:21
 end
 fprintf('Sandvik data pre-loaded (will not be re-read per iteration).\n\n');
 
+% Checkpoint folder — each seed saved to disk so runs survive interruption
+ckptDir = 'mc_checkpoints';
+if ~exist(ckptDir, 'dir'), mkdir(ckptDir); end
+
+nDone = sum(arrayfun(@(k) exist(fullfile(ckptDir, sprintf('seed_%04d.mat',k)),'file')>0, 1:K));
+if nDone > 0
+  fprintf('Resuming: %d/%d seeds already done (found in %s)\n\n', nDone, K, ckptDir);
+end
+
 fprintf('Starting Monte Carlo: K=%d, nQuarters=%d\n\n', K, nPeriods);
 tStart = tic;
 
 % Collect per-iteration results in a cell array (required for parfor)
 results = cell(K, 1);
 
-% Progress counter via DataQueue (parfor-safe; falls back gracefully without PCT)
+% Progress counter via DataQueue (parfor-safe; skipped if no PCT)
 try
   dq = parallel.pool.DataQueue;
   afterEach(dq, @(k) fprintf('  Seed %4d done  (%.0fs elapsed)\n', k, toc(tStart)));
 catch
-  dq = [];  % no Parallel Computing Toolbox — progress not printed per-iteration
+  dq = [];
 end
 
 parfor k = 1:K
-  % Each parallel worker writes to its own subfolder to avoid file conflicts
-  t = getCurrentTask();
-  if isempty(t)
-    wFolder = 'simulatedData';           % serial fallback (no parallel pool)
+  ckptFile = fullfile(ckptDir, sprintf('seed_%04d.mat', k));
+
+  if exist(ckptFile, 'file')
+    % Already computed — load from disk and skip
+    tmp      = load(ckptFile, 'r');
+    results{k} = tmp.r;
   else
-    wFolder = fullfile('simulatedData', sprintf('worker_%d', t.ID));
-  end
-
-  localSettings            = settings;
-  localSettings.dataFolder = wFolder;
-
-  r = struct( ...
-    'FX_trans',      nan(1, nPeriods), 'FX_trans_BOM',  nan(1, nPeriods), ...
-    'FX_transl',     nan(1, nPeriods), ...
-    'FX_cc_total',   nan(1, nPeriods), 'FX_cc_trans',   nan(1, nPeriods), ...
-    'FX_cc_transl',  nan(1, nPeriods), 'FX_cc_cross',   nan(1, nPeriods), ...
-    'FX_trans_CC_LY',nan(1, nPeriods), 'FX_transl_CC_LY',nan(1, nPeriods), ...
-    'FX_cc_LY_total',nan(1, nPeriods), ...
-    'M1_TI',  nan(1, nPeriods), 'M1_OCI',  nan(1, nPeriods), ...
-    'M2w_TI', nan(1, nPeriods), 'M2w_OCI', nan(1, nPeriods), ...
-    'M2m_TI', nan(1, nPeriods), 'M2m_OCI', nan(1, nPeriods), ...
-    'M2q_TI', nan(1, nPeriods), 'M2q_OCI', nan(1, nPeriods), ...
-    'M1_CC_TI',    nan(1, nPeriods), 'M1_CC_OCI',    nan(1, nPeriods), ...
-    'CC_avg_TI',   nan(1, nPeriods), 'CC_avg_OCI',   nan(1, nPeriods), ...
-    'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods), ...
-    'flowCC_snap_trans',  nan(1, nPeriods), 'flowCC_snap_transl',  nan(1, nPeriods), ...
-    'flowCC_snap_cross',  nan(1, nPeriods), 'flowCC_snap_total',   nan(1, nPeriods), ...
-    'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
-    'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
-    'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
-    'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods));
-
-  createMatFilesSim(dm, k, false, wFolder, sandvikArrays);
-
-  try
-    dc = createDataCompany(dm, localSettings);
-
-    % --- PAM --------------------------------------------------------------
-    dp = buildPA(dm, dc);
-    dr = performanceAttribution(dm, dc, dp, false);
-
-    for p = 1:nPeriods
-      idx = quarterIdx{p};
-      if ~isempty(idx)
-        r.FX_trans(p)     = sum(dr.dFX_trans(idx));
-        r.FX_trans_BOM(p) = sum(dr.dFX_trans_BOM(idx));
-        r.FX_transl(p)    = sum(dr.dFX_transl(idx));
-      end
+    % Each parallel worker writes to its own subfolder to avoid file conflicts
+    t = getCurrentTask();
+    if isempty(t)
+      wFolder = 'simulatedData';
+    else
+      wFolder = fullfile('simulatedData', sprintf('worker_%d', t.ID));
     end
-    r.FX_cc_total      = dr.FX_cc_total_quarterly(:)';
-    r.FX_cc_trans      = dr.FX_cc_trans_quarterly(:)';
-    r.FX_cc_transl     = dr.FX_cc_transl_quarterly(:)';
-    r.FX_cc_cross      = dr.FX_cc_cross_quarterly(:)';
-    r.FX_trans_CC_LY   = dr.FX_trans_CC_LY_quarterly(:)';
-    r.FX_transl_CC_LY  = dr.FX_transl_CC_LY_quarterly(:)';
-    r.FX_cc_LY_total   = dr.FX_cc_LY_total_quarterly(:)';
 
-    % --- Shared accounting core -------------------------------------------
-    bs  = buildBalanceSheet(dm, dc);
-    pnl = buildFunctionalPnL(dm, dc, bs);
+    localSettings            = settings;
+    localSettings.dataFolder = wFolder;
 
-    % --- Method 1 ---------------------------------------------------------
-    m1 = computeMethod1(dm, dc, '', bs, pnl);
-    r.M1_TI  = m1.TI(:)';
-    r.M1_OCI = m1.OCI(:)';
+    r = struct( ...
+      'FX_trans',      nan(1, nPeriods), 'FX_trans_BOM',  nan(1, nPeriods), ...
+      'FX_transl',     nan(1, nPeriods), ...
+      'FX_cc_total',   nan(1, nPeriods), 'FX_cc_trans',   nan(1, nPeriods), ...
+      'FX_cc_transl',  nan(1, nPeriods), 'FX_cc_cross',   nan(1, nPeriods), ...
+      'FX_trans_CC_LY',nan(1, nPeriods), 'FX_transl_CC_LY',nan(1, nPeriods), ...
+      'FX_cc_LY_total',nan(1, nPeriods), ...
+      'M1_TI',  nan(1, nPeriods), 'M1_OCI',  nan(1, nPeriods), ...
+      'M2w_TI', nan(1, nPeriods), 'M2w_OCI', nan(1, nPeriods), ...
+      'M2m_TI', nan(1, nPeriods), 'M2m_OCI', nan(1, nPeriods), ...
+      'M2q_TI', nan(1, nPeriods), 'M2q_OCI', nan(1, nPeriods), ...
+      'M1_CC_TI',    nan(1, nPeriods), 'M1_CC_OCI',    nan(1, nPeriods), ...
+      'CC_avg_TI',   nan(1, nPeriods), 'CC_avg_OCI',   nan(1, nPeriods), ...
+      'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods), ...
+      'flowCC_snap_trans',  nan(1, nPeriods), 'flowCC_snap_transl',  nan(1, nPeriods), ...
+      'flowCC_snap_cross',  nan(1, nPeriods), 'flowCC_snap_total',   nan(1, nPeriods), ...
+      'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
+      'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
+      'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
+      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods));
 
-    % --- Method 2 ---------------------------------------------------------
-    m2 = computeMethod2(dm, dc, '', bs, pnl);
-    r.M2w_TI  = m2.weekly.TI(:)';   r.M2w_OCI = m2.weekly.OCI(:)';
-    r.M2m_TI  = m2.monthly.TI(:)';  r.M2m_OCI = m2.monthly.OCI(:)';
-    r.M2q_TI  = m2.quarterly.TI(:)';r.M2q_OCI = m2.quarterly.OCI(:)';
+    createMatFilesSim(dm, k, false, wFolder, sandvikArrays);
 
-    % --- Constant-currency ------------------------------------------------
-    P = min(length(m1.cc.avg.quarterly_TI), nPeriods);
-    r.M1_CC_TI(1:P)    = m1.cc.M1.quarterly_TI(1:P)';
-    r.M1_CC_OCI(1:P)   = m1.cc.M1.quarterly_OCI(1:P)';
-    r.CC_avg_TI(1:P)   = m1.cc.avg.quarterly_TI(1:P)';
-    r.CC_avg_OCI(1:P)  = m1.cc.avg.quarterly_OCI(1:P)';
-    r.CC_close_TI(1:P) = m1.cc.close.quarterly_TI(1:P)';
-    r.CC_close_OCI(1:P)= m1.cc.close.quarterly_OCI(1:P)';
+    try
+      dc = createDataCompany(dm, localSettings);
 
-    % --- Flow-restricted PAM CC (snap / bonds / BOM) ----------------------
-    fcc = performanceAttributionFlowCC(dm, dc, pnl);
-    Pf  = min(length(fcc.snap.total_quarterly), nPeriods);
-    r.flowCC_snap_trans(1:Pf)  = fcc.snap.trans_quarterly(1:Pf)';
-    r.flowCC_snap_transl(1:Pf) = fcc.snap.transl_quarterly(1:Pf)';
-    r.flowCC_snap_cross(1:Pf)  = fcc.snap.cross_quarterly(1:Pf)';
-    r.flowCC_snap_total(1:Pf)  = fcc.snap.total_quarterly(1:Pf)';
-    r.flowCC_bonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
-    r.flowCC_bonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
-    r.flowCC_bonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
-    r.flowCC_bonds_total(1:Pf)  = fcc.bonds.total_quarterly(1:Pf)';
-    r.flowCC_BOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
-    r.flowCC_BOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
-    r.flowCC_BOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
-    r.flowCC_BOM_total(1:Pf)    = fcc.BOM.total_quarterly(1:Pf)';
+      % --- PAM ------------------------------------------------------------
+      dp = buildPA(dm, dc);
+      dr = performanceAttribution(dm, dc, dp, false);
 
-  catch ME
-    fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
+      for p = 1:nPeriods
+        idx = quarterIdx{p};
+        if ~isempty(idx)
+          r.FX_trans(p)     = sum(dr.dFX_trans(idx));
+          r.FX_trans_BOM(p) = sum(dr.dFX_trans_BOM(idx));
+          r.FX_transl(p)    = sum(dr.dFX_transl(idx));
+        end
+      end
+      r.FX_cc_total      = dr.FX_cc_total_quarterly(:)';
+      r.FX_cc_trans      = dr.FX_cc_trans_quarterly(:)';
+      r.FX_cc_transl     = dr.FX_cc_transl_quarterly(:)';
+      r.FX_cc_cross      = dr.FX_cc_cross_quarterly(:)';
+      r.FX_trans_CC_LY   = dr.FX_trans_CC_LY_quarterly(:)';
+      r.FX_transl_CC_LY  = dr.FX_transl_CC_LY_quarterly(:)';
+      r.FX_cc_LY_total   = dr.FX_cc_LY_total_quarterly(:)';
+
+      % --- Shared accounting core -----------------------------------------
+      bs  = buildBalanceSheet(dm, dc);
+      pnl = buildFunctionalPnL(dm, dc, bs);
+
+      % --- Method 1 -------------------------------------------------------
+      m1 = computeMethod1(dm, dc, '', bs, pnl);
+      r.M1_TI  = m1.TI(:)';
+      r.M1_OCI = m1.OCI(:)';
+
+      % --- Method 2 -------------------------------------------------------
+      m2 = computeMethod2(dm, dc, '', bs, pnl);
+      r.M2w_TI  = m2.weekly.TI(:)';    r.M2w_OCI = m2.weekly.OCI(:)';
+      r.M2m_TI  = m2.monthly.TI(:)';   r.M2m_OCI = m2.monthly.OCI(:)';
+      r.M2q_TI  = m2.quarterly.TI(:)'; r.M2q_OCI = m2.quarterly.OCI(:)';
+
+      % --- Constant-currency ----------------------------------------------
+      P = min(length(m1.cc.avg.quarterly_TI), nPeriods);
+      r.M1_CC_TI(1:P)    = m1.cc.M1.quarterly_TI(1:P)';
+      r.M1_CC_OCI(1:P)   = m1.cc.M1.quarterly_OCI(1:P)';
+      r.CC_avg_TI(1:P)   = m1.cc.avg.quarterly_TI(1:P)';
+      r.CC_avg_OCI(1:P)  = m1.cc.avg.quarterly_OCI(1:P)';
+      r.CC_close_TI(1:P) = m1.cc.close.quarterly_TI(1:P)';
+      r.CC_close_OCI(1:P)= m1.cc.close.quarterly_OCI(1:P)';
+
+      % --- Flow-restricted PAM CC (snap / bonds / BOM) --------------------
+      fcc = performanceAttributionFlowCC(dm, dc, pnl);
+      Pf  = min(length(fcc.snap.total_quarterly), nPeriods);
+      r.flowCC_snap_trans(1:Pf)   = fcc.snap.trans_quarterly(1:Pf)';
+      r.flowCC_snap_transl(1:Pf)  = fcc.snap.transl_quarterly(1:Pf)';
+      r.flowCC_snap_cross(1:Pf)   = fcc.snap.cross_quarterly(1:Pf)';
+      r.flowCC_snap_total(1:Pf)   = fcc.snap.total_quarterly(1:Pf)';
+      r.flowCC_bonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
+      r.flowCC_bonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
+      r.flowCC_bonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
+      r.flowCC_bonds_total(1:Pf)  = fcc.bonds.total_quarterly(1:Pf)';
+      r.flowCC_BOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
+      r.flowCC_BOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
+      r.flowCC_BOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
+      r.flowCC_BOM_total(1:Pf)    = fcc.BOM.total_quarterly(1:Pf)';
+
+    catch ME
+      fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
+    end
+
+    % Save checkpoint so this seed is not recomputed on restart
+    save(ckptFile, 'r');
+    results{k} = r;
   end
 
-  results{k} = r;
   if ~isempty(dq), send(dq, k); end
 end
 
@@ -309,7 +328,7 @@ for p = 1:nPeriods
 end
 
 fprintf('\n=== Full-period totals (sum of quarters) ===\n');
-names  = {'Trans — Bonds only (Eq.4.45)', 'Trans — Bonds+BOM      ', 'Translation   (Eq.4.46)', 'CC Total       (Eq.4.47)'};
+names  = {'Trans — Bonds only      ', 'Trans — Bonds+BOM      ', 'Translation             ', 'CC Total                '};
 fields = {'FX_trans', 'FX_trans_BOM', 'FX_transl', 'FX_cc_total'};
 fprintf('%-28s %12s %12s %12s %12s %12s\n', '', 'Mean', 'Std', 'P5', 'Median', 'P95');
 fprintf('%s\n', repmat('-', 1, 80));
@@ -327,8 +346,7 @@ qEndDates = periodDates(2:end);          % end-date of each quarter
 uniqueYears = unique(qYears);
 nYears      = length(uniqueYears);
 
-% For each year: sum the quarterly MC means within the year.
-% Equivalent to: mean over valid iters of (sum of quarters in year).
+% For each year: mean over valid iterations of the sum across quarters.
 TI_annual       = zeros(nYears, 1);
 TI_BOM_annual   = zeros(nYears, 1);
 OCI_annual      = zeros(nYears, 1);
@@ -354,7 +372,7 @@ for y = 1:nYears
   CCtl_LY_annual(y) = mean(sum(mc.FX_transl_CC_LY(valid, qMask), 2));
 end
 
-% Hard assertion: CC_trans + CC_transl + CC_cross == CC_total (per year, three-way)
+% Sanity check: CC_trans + CC_transl + CC_cross must equal CC_total
 for y = 1:nYears
   err = abs(CCtr_annual(y) + CCtl_annual(y) + CCx_annual(y) - CCt_annual(y));
   assert(err < 1e-5, 'PAM CC three-way annual decomposition mismatch for year %d (err=%.2e)', ...
@@ -688,7 +706,7 @@ function plotSilvermanKDE(ax, e, lbl, col)
 end
 
 function printActualTable(methodNames, matrices, periodDates, nPeriods)
-% Print a table of mean values per quarter for each method (SEK millions).
+% Mean values per quarter for each method, in SEK millions.
   nc   = length(methodNames);
   colW = 13;
   fprintf('%-12s', 'Quarter');
