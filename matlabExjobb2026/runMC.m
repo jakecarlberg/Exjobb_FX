@@ -410,13 +410,33 @@ fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
 % =========================================================================
 % OUTPUT — Three sections: TI | Translation (OCI) | Constant Currency (CC)
 % Each section: (1) actual values table  (2) error table
-%               (3) time series figure   (4) error distributions figure
+%               (3-6) four separate figures, saved as PDF
 % =========================================================================
 
-qLabels  = datestr(periodDates(2:end), 'yyyy-Qq');
-qx       = 1:nPeriods;
-colors   = {[0.12 0.47 0.71],[0.20 0.63 0.17],[0.89 0.10 0.11],[0.60 0.40 0.12],[0.55 0.34 0.72]};
-mu       = @(M) mean(M,1)/1e6;   % mean over K, scale to SEK millions
+% Folder for PDF output
+figDir = 'figures';
+if ~exist(figDir, 'dir'), mkdir(figDir); end
+
+qx = 1:nPeriods;
+
+% X-axis: year label at first quarter of each year, tick marks at all quarters
+isNewYear  = [true; diff(qYears) ~= 0];
+xTickLbls  = repmat({''}, 1, nPeriods);
+newYearIdx = find(isNewYear);
+for ii = 1:length(newYearIdx)
+  xTickLbls{newYearIdx(ii)} = num2str(qYears(newYearIdx(ii)));
+end
+
+% Consistent color scheme — same method = same color in every figure
+cPAM   = [0.12 0.47 0.71];  % blue   — PAM bonds
+cM1    = [0.89 0.10 0.11];  % red    — Method 1
+cM2w   = [0.99 0.55 0.24];  % orange — M2 weekly
+cM2m   = [0.20 0.63 0.17];  % green  — M2 monthly
+cM2q   = [0.55 0.34 0.72];  % purple — M2 quarterly
+cCCavg = [0.60 0.40 0.12];  % brown  — CC avg
+cCCcls = [0.84 0.19 0.87];  % pink   — CC close
+
+mu       = @(M) mean(M,1)/1e6;
 printRow = @(label, A, B) printErrRow(label, A(:), B(:));
 kdeplot  = @(ax, e, lbl, col) plotSilvermanKDE(ax, e, lbl, col);
 
@@ -472,49 +492,49 @@ printRow('M1         vs  M2 weekly',    M1_TI_q, M2w_TI_q);
 printRow('M1         vs  M2 monthly',   M1_TI_q, M2m_TI_q);
 printRow('M1         vs  M2 quarterly', M1_TI_q, M2q_TI_q);
 
-% --- 1c. Figure 10: TI mean time series (non-cumulative + cumulative) ----
-figure(10); clf;
-subplot(2,1,1); hold on;
-plot(qx, mu(PAM_TI_q),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM (bonds)');
-plot(qx, mu(PAM_TI_BOM_q), 'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM (BOM)');
-plot(qx, mu(M1_TI_q),      'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, mu(M2m_TI_q),     'g-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-yline(0,'k--','LineWidth',0.8);
-set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
-ylabel('SEK million'); title('TI — Mean per quarter'); legend('Location','Best'); grid on;
-
-subplot(2,1,2); hold on;
-plot(qx, cumsum(mu(PAM_TI_q)),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM (bonds)');
-plot(qx, cumsum(mu(PAM_TI_BOM_q)), 'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM (BOM)');
-plot(qx, cumsum(mu(M1_TI_q)),      'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, cumsum(mu(M2m_TI_q)),     'g-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-yline(0,'k--','LineWidth',0.8);
-set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
-ylabel('SEK million'); title('TI — Cumulative mean'); legend('Location','Best'); grid on;
-sgtitle(sprintf('Transactional Impact (TI) — Mean values (K=%d)', nValid));
-
-% --- 1d. Figure 11: TI error distributions (boxplot + KDE) ---------------
 err_TI_M1  = (PAM_TI_q - M1_TI_q)  / 1e6;
 err_TI_M2w = (PAM_TI_q - M2w_TI_q) / 1e6;
 err_TI_M2m = (PAM_TI_q - M2m_TI_q) / 1e6;
 err_TI_M2q = (PAM_TI_q - M2q_TI_q) / 1e6;
 
-figure(11); clf;
-subplot(2,1,1);
+% --- Figure 10: TI mean per quarter ---------------------------------------
+fig = figure(10); clf; hold on;
+plot(qx, mu(PAM_TI_q),     '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(qx, mu(PAM_TI_BOM_q), '--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM BOM');
+plot(qx, mu(M1_TI_q),      '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, mu(M2m_TI_q),     '-o',  'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million'); title('TI — mean per quarter'); legend('Location','Best'); grid on;
+print(fig, fullfile(figDir,'TI_actual.pdf'), '-dpdf');
+
+% --- Figure 11: TI cumulative ---------------------------------------------
+fig = figure(11); clf; hold on;
+plot(qx, cumsum(mu(PAM_TI_q)),     '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(qx, cumsum(mu(PAM_TI_BOM_q)), '--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM BOM');
+plot(qx, cumsum(mu(M1_TI_q)),      '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, cumsum(mu(M2m_TI_q)),     '-o',  'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million'); title('TI — cumulative'); legend('Location','Best'); grid on;
+print(fig, fullfile(figDir,'TI_actual_cum.pdf'), '-dpdf');
+
+% --- Figure 12: TI error boxplot ------------------------------------------
+fig = figure(12); clf;
 boxplot([err_TI_M1(:), err_TI_M2w(:), err_TI_M2m(:), err_TI_M2q(:)], ...
   'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('TI error distributions — boxplot (%d obs each)', N_obs));
+yline(0,'k--'); ylabel('SEK million'); title('TI — error distributions');
+print(fig, fullfile(figDir,'TI_errors_box.pdf'), '-dpdf');
 
-subplot(2,1,2); hold on;
-kdeplot(gca, err_TI_M1(:),  'PAM bonds vs M1',          colors{1});
-kdeplot(gca, err_TI_M2w(:), 'PAM bonds vs M2 weekly',   colors{2});
-kdeplot(gca, err_TI_M2m(:), 'PAM bonds vs M2 monthly',  colors{3});
-kdeplot(gca, err_TI_M2q(:), 'PAM bonds vs M2 quarterly',colors{4});
+% --- Figure 13: TI error KDE ----------------------------------------------
+fig = figure(13); clf; hold on;
+kdeplot(gca, err_TI_M1(:),  'PAM vs M1',          cM1);
+kdeplot(gca, err_TI_M2w(:), 'PAM vs M2 weekly',   cM2w);
+kdeplot(gca, err_TI_M2m(:), 'PAM vs M2 monthly',  cM2m);
+kdeplot(gca, err_TI_M2q(:), 'PAM vs M2 quarterly',cM2q);
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-title(sprintf('TI error KDE — Silverman bandwidth (N=%d obs)', N_obs));
-sgtitle(sprintf('Transactional Impact (TI) — Error Distributions (K=%d)', nValid));
+legend('Location','Best'); grid on; title('TI — error densities');
+print(fig, fullfile(figDir,'TI_errors_kde.pdf'), '-dpdf');
 
 % =========================================================================
 %  SECTION 2 — TRANSLATION / OCI
@@ -545,47 +565,47 @@ printRow('M1 OCI      vs  M2 weekly',    M1_OCI_q, M2w_OCI_q);
 printRow('M1 OCI      vs  M2 monthly',   M1_OCI_q, M2m_OCI_q);
 printRow('M1 OCI      vs  M2 quarterly', M1_OCI_q, M2q_OCI_q);
 
-% --- 2c. Figure 12: OCI mean time series ----------------------------------
-figure(12); clf;
-subplot(2,1,1); hold on;
-plot(qx, mu(PAM_OCI_q),  'b-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
-plot(qx, mu(M1_OCI_q),   'r-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, mu(M2m_OCI_q),  'g-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-yline(0,'k--','LineWidth',0.8);
-set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
-ylabel('SEK million'); title('OCI — Mean per quarter'); legend('Location','Best'); grid on;
-
-subplot(2,1,2); hold on;
-plot(qx, cumsum(mu(PAM_OCI_q)),  'b-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
-plot(qx, cumsum(mu(M1_OCI_q)),   'r-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, cumsum(mu(M2m_OCI_q)),  'g-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-yline(0,'k--','LineWidth',0.8);
-set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
-ylabel('SEK million'); title('OCI — Cumulative mean'); legend('Location','Best'); grid on;
-sgtitle(sprintf('Translation / OCI — Mean values (K=%d)', nValid));
-
-% --- 2d. Figure 13: OCI error distributions -------------------------------
 err_OCI_M1  = (PAM_OCI_q - M1_OCI_q)  / 1e6;
 err_OCI_M2w = (PAM_OCI_q - M2w_OCI_q) / 1e6;
 err_OCI_M2m = (PAM_OCI_q - M2m_OCI_q) / 1e6;
 err_OCI_M2q = (PAM_OCI_q - M2q_OCI_q) / 1e6;
 
-figure(13); clf;
-subplot(2,1,1);
+% --- Figure 14: OCI mean per quarter --------------------------------------
+fig = figure(14); clf; hold on;
+plot(qx, mu(PAM_OCI_q),  '-o', 'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
+plot(qx, mu(M1_OCI_q),   '-o', 'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, mu(M2m_OCI_q),  '-o', 'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million'); title('OCI — mean per quarter'); legend('Location','Best'); grid on;
+print(fig, fullfile(figDir,'OCI_actual.pdf'), '-dpdf');
+
+% --- Figure 15: OCI cumulative --------------------------------------------
+fig = figure(15); clf; hold on;
+plot(qx, cumsum(mu(PAM_OCI_q)),  '-o', 'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
+plot(qx, cumsum(mu(M1_OCI_q)),   '-o', 'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, cumsum(mu(M2m_OCI_q)),  '-o', 'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million'); title('OCI — cumulative'); legend('Location','Best'); grid on;
+print(fig, fullfile(figDir,'OCI_actual_cum.pdf'), '-dpdf');
+
+% --- Figure 16: OCI error boxplot -----------------------------------------
+fig = figure(16); clf;
 boxplot([err_OCI_M1(:), err_OCI_M2w(:), err_OCI_M2m(:), err_OCI_M2q(:)], ...
   'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('OCI error distributions — boxplot (%d obs each)', N_obs));
+yline(0,'k--'); ylabel('SEK million'); title('OCI — error distributions');
+print(fig, fullfile(figDir,'OCI_errors_box.pdf'), '-dpdf');
 
-subplot(2,1,2); hold on;
-kdeplot(gca, err_OCI_M1(:),  'PAM vs M1 OCI',          colors{1});
-kdeplot(gca, err_OCI_M2w(:), 'PAM vs M2 weekly OCI',   colors{2});
-kdeplot(gca, err_OCI_M2m(:), 'PAM vs M2 monthly OCI',  colors{3});
-kdeplot(gca, err_OCI_M2q(:), 'PAM vs M2 quarterly OCI',colors{4});
+% --- Figure 17: OCI error KDE ---------------------------------------------
+fig = figure(17); clf; hold on;
+kdeplot(gca, err_OCI_M1(:),  'PAM vs M1',          cM1);
+kdeplot(gca, err_OCI_M2w(:), 'PAM vs M2 weekly',   cM2w);
+kdeplot(gca, err_OCI_M2m(:), 'PAM vs M2 monthly',  cM2m);
+kdeplot(gca, err_OCI_M2q(:), 'PAM vs M2 quarterly',cM2q);
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-title(sprintf('OCI error KDE — Silverman bandwidth (N=%d obs)', N_obs));
-sgtitle(sprintf('Translation / OCI — Error Distributions (K=%d)', nValid));
+legend('Location','Best'); grid on; title('OCI — error densities');
+print(fig, fullfile(figDir,'OCI_errors_kde.pdf'), '-dpdf');
 
 % =========================================================================
 %  SECTION 3 — CONSTANT CURRENCY (CC)
@@ -631,50 +651,52 @@ printRow('snap  vs  bonds', fSnap_q,  fBonds_q);
 printRow('snap  vs  BOM',   fSnap_q,  fBOM_q);
 printRow('bonds vs  BOM',   fBonds_q, fBOM_q);
 
-% --- 3c. Figure 14: CC mean time series -----------------------------------
-figure(14); clf;
-subplot(2,1,1); hold on;
-plot(qx, mu(fBOM_q),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM-flow BOM');
-plot(qx, mu(fBonds_q),   'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM-flow Bonds');
-plot(qx, mu(M1_CC_q),    'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC (=avg)');
-plot(qx, mu(CC_close_q), 'm-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
-yline(0,'k--','LineWidth',0.8);
-set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
-ylabel('SEK million'); title('CC — Mean per quarter'); legend('Location','Best'); grid on;
-
-subplot(2,1,2); hold on;
-plot(qx, cumsum(mu(fBOM_q)),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM-flow BOM');
-plot(qx, cumsum(mu(fBonds_q)),   'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM-flow Bonds');
-plot(qx, cumsum(mu(M1_CC_q)),    'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC (=avg)');
-plot(qx, cumsum(mu(CC_close_q)), 'm-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
-yline(0,'k--','LineWidth',0.8);
-set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
-ylabel('SEK million'); title('CC — Cumulative mean'); legend('Location','Best'); grid on;
-sgtitle(sprintf('Constant Currency (CC) — Mean values (K=%d)', nValid));
-
-% --- 3d. Figure 15: CC error distributions --------------------------------
 err_BOM_M1    = (fBOM_q   - M1_CC_q)    / 1e6;
 err_BOM_avg   = (fBOM_q   - CC_avg_q)   / 1e6;
 err_BOM_close = (fBOM_q   - CC_close_q) / 1e6;
 err_bonds_M1  = (fBonds_q - M1_CC_q)    / 1e6;
 err_bonds_avg = (fBonds_q - CC_avg_q)   / 1e6;
 
-figure(15); clf;
-subplot(2,1,1);
+% --- Figure 18: CC mean per quarter ---------------------------------------
+fig = figure(18); clf; hold on;
+plot(qx, mu(fBOM_q),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
+plot(qx, mu(fBonds_q),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(qx, mu(M1_CC_q),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
+plot(qx, mu(CC_avg_q),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
+plot(qx, mu(CC_close_q), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million'); title('CC — mean per quarter'); legend('Location','Best'); grid on;
+print(fig, fullfile(figDir,'CC_actual.pdf'), '-dpdf');
+
+% --- Figure 19: CC cumulative ---------------------------------------------
+fig = figure(19); clf; hold on;
+plot(qx, cumsum(mu(fBOM_q)),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
+plot(qx, cumsum(mu(fBonds_q)),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(qx, cumsum(mu(M1_CC_q)),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
+plot(qx, cumsum(mu(CC_avg_q)),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
+plot(qx, cumsum(mu(CC_close_q)), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million'); title('CC — cumulative'); legend('Location','Best'); grid on;
+print(fig, fullfile(figDir,'CC_actual_cum.pdf'), '-dpdf');
+
+% --- Figure 20: CC error boxplot ------------------------------------------
+fig = figure(20); clf;
 boxplot([err_BOM_M1(:), err_BOM_avg(:), err_BOM_close(:), err_bonds_M1(:), err_bonds_avg(:)], ...
   'Labels', {'BOM-M1','BOM-avg','BOM-close','bonds-M1','bonds-avg'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('CC error distributions — boxplot (%d obs each)', N_obs));
+yline(0,'k--'); ylabel('SEK million'); title('CC — error distributions');
+print(fig, fullfile(figDir,'CC_errors_box.pdf'), '-dpdf');
 
-subplot(2,1,2); hold on;
-kdeplot(gca, err_BOM_M1(:),    'PAM BOM vs M1 CC',    colors{1});
-kdeplot(gca, err_BOM_avg(:),   'PAM BOM vs CC avg',   colors{2});
-kdeplot(gca, err_BOM_close(:), 'PAM BOM vs CC close', colors{3});
-kdeplot(gca, err_bonds_M1(:),  'PAM bonds vs M1 CC',  colors{4});
+% --- Figure 21: CC error KDE ----------------------------------------------
+fig = figure(21); clf; hold on;
+kdeplot(gca, err_BOM_M1(:),    'PAM BOM vs M1 CC',    cM1);
+kdeplot(gca, err_BOM_avg(:),   'PAM BOM vs CC avg',   cCCavg);
+kdeplot(gca, err_BOM_close(:), 'PAM BOM vs CC close', cCCcls);
+kdeplot(gca, err_bonds_M1(:),  'PAM bonds vs M1 CC',  cM2w);
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-title(sprintf('CC error KDE — Silverman bandwidth (N=%d obs)', N_obs));
-sgtitle(sprintf('Constant Currency (CC) — Error Distributions (K=%d)', nValid));
+legend('Location','Best'); grid on; title('CC — error densities');
+print(fig, fullfile(figDir,'CC_errors_kde.pdf'), '-dpdf');
 
 % =========================================================================
 % LOCAL FUNCTIONS
