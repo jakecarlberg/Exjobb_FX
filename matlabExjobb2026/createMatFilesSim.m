@@ -1,17 +1,24 @@
-function createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays)
+function createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays, timingOverride)
 % createMatFilesSim  Generate synthetic multi-currency transaction data.
 %
-%   createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays)
+%   createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays, timingOverride)
 %
-%   dm            - market data struct from createDataMarket (provides FX rates)
-%   seed          - RNG seed for reproducibility (default 1)
-%   verbose       - print year-by-year summary to console (default true)
-%   dataFolder    - output folder for .mat files (default 'simulatedData')
-%                   Use worker-specific folders when running under parfor.
-%   sandvikArrays - optional struct with fields revenueGrowthPct and
-%                   grossMarginPct (pre-loaded in runMC to avoid reading
-%                   the Excel file on every MC iteration).  If empty or
-%                   omitted the file is read as normal.
+%   dm              - market data struct from createDataMarket (provides FX rates)
+%   seed            - RNG seed for reproducibility (default 1)
+%   verbose         - print year-by-year summary to console (default true)
+%   dataFolder      - output folder for .mat files (default 'simulatedData')
+%                     Use worker-specific folders when running under parfor.
+%   sandvikArrays   - optional struct with fields revenueGrowthPct and
+%                     grossMarginPct (pre-loaded in runMC to avoid reading
+%                     the Excel file on every MC iteration).  If empty or
+%                     omitted the file is read as normal.
+%   timingOverride  - optional struct with any subset of fields:
+%                       procLeadMean / procLeadStd
+%                       mfgMean      / mfgStd
+%                       custPayMean  / custPayStd
+%                       suppPayMean  / suppPayStd
+%                     Fields present override the baseline Table 4.7 values
+%                     (used by runSensitivity to sweep timing parameters).
 %
 % The function generates a 21-year transaction history (2005-2025) for a
 % simulated manufacturing subsidiary.  Revenue and gross margin are
@@ -24,6 +31,7 @@ if nargin < 2 || isempty(seed),          seed          = 1;              end
 if nargin < 3 || isempty(verbose),        verbose       = true;           end
 if nargin < 4 || isempty(dataFolder),     dataFolder    = 'simulatedData'; end
 if nargin < 5,                            sandvikArrays = [];             end
+if nargin < 6,                            timingOverride = [];            end
 
 rng(seed);
 
@@ -107,11 +115,23 @@ saleExposurePct = [38,   22,   12,    7,    6,    5,    5  ];
 % --- Cash management -----------------------------------------------------
 cashRetentionFrac = 0.10;  % retain 10% of prior year COGS; sweep rest to parent
 
-% --- Timing parameters (Table 4.7) — unchanged --------------------------
+% --- Timing parameters (Table 4.7) --------------------------------------
 procLeadMean = 45;  procLeadStd = 10;   % days: procurement lead time (order → delivery)
 mfgMean      = 20;  mfgStd      =  5;   % days: manufacturing duration
 custPayMean  = 45;  custPayStd  = 15;   % days: customer payment delay
 suppPayMean  = 60;  suppPayStd  = 15;   % days: supplier payment delay
+
+% Apply runSensitivity overrides (field-by-field; absent fields keep baseline)
+if ~isempty(timingOverride)
+  if isfield(timingOverride, 'procLeadMean'), procLeadMean = timingOverride.procLeadMean; end
+  if isfield(timingOverride, 'procLeadStd'),  procLeadStd  = timingOverride.procLeadStd;  end
+  if isfield(timingOverride, 'mfgMean'),      mfgMean      = timingOverride.mfgMean;      end
+  if isfield(timingOverride, 'mfgStd'),       mfgStd       = timingOverride.mfgStd;       end
+  if isfield(timingOverride, 'custPayMean'),  custPayMean  = timingOverride.custPayMean;  end
+  if isfield(timingOverride, 'custPayStd'),   custPayStd   = timingOverride.custPayStd;   end
+  if isfield(timingOverride, 'suppPayMean'),  suppPayMean  = timingOverride.suppPayMean;  end
+  if isfield(timingOverride, 'suppPayStd'),   suppPayStd   = timingOverride.suppPayStd;   end
+end
 
 %% ========================================================================
 %  COMPONENT & BOM DEFINITIONS  (fixed structure)
@@ -261,7 +281,7 @@ for y = 1:nYears
     for j = 1:length(compIdx)
       cj = compIdx(j);
       fxSeries = dm.fx{compIcur(cj), iCurFunctional}(iDmBOY:iDmEOY);
-      fxAvg    = nanmean(fxSeries);
+      fxAvg    = mean(fxSeries, 'omitnan');
       cogsPerUnit(t) = cogsPerUnit(t) + compPriceInit(cj) * compQty(j) * fxAvg;
     end
   end
