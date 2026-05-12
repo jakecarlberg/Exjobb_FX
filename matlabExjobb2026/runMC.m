@@ -269,7 +269,7 @@ parfor k = 1:K
     end
 
     % Save checkpoint so this seed is not recomputed on restart
-    save(ckptFile, 'r');
+    saveCheckpoint(ckptFile, r);
     results{k} = r;
   end
 
@@ -703,6 +703,11 @@ function plotSilvermanKDE(ax, e, lbl, col)
   h  = 0.9 * min(s, iqr(e)/1.34) * N^(-1/5);
   [f, xi] = ksdensity(e, 'Bandwidth', h);
   plot(ax, xi, f, 'Color', col, 'LineWidth', 1.8, 'DisplayName', lbl);
+end
+
+function saveCheckpoint(fname, r) %#ok<INUSD>
+% Wrapper so save can be called from inside parfor (direct save is not allowed).
+  save(fname, 'r');
 end
 
 function printActualTable(methodNames, matrices, periodDates, nPeriods)
