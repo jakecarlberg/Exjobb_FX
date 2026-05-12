@@ -390,175 +390,55 @@ fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
   sum(CCt_LY_annual), sum(CCtr_LY_annual), sum(CCtl_LY_annual));
 
 % =========================================================================
-% PLOTS
-% =========================================================================
-qLabels = datestr(periodDates(2:end), 'yyyy-Qq');
-
-figure(10); clf;
-subplot(4,1,1);
-boxplot(mc.FX_trans(valid,:));     set(gca,'XTickLabel',[]); ylabel('SEK');
-title('Transactional FX — Bonds only (Eq.4.45)');
-
-subplot(4,1,2);
-boxplot(mc.FX_trans_BOM(valid,:)); set(gca,'XTickLabel',[]); ylabel('SEK');
-title('Transactional FX — Bonds + BOM');
-
-subplot(4,1,3);
-boxplot(mc.FX_transl(valid,:));    set(gca,'XTickLabel',[]); ylabel('SEK');
-title('Translation FX per quarter (Eq.4.46)');
-
-subplot(4,1,4);
-boxplot(mc.FX_cc_total(valid,:));  ylabel('SEK');
-title('Constant-currency FX Total per quarter (Eq.4.47)');
-
-sgtitle(sprintf('PAM FX Benchmarks — Monte Carlo (K=%d)', nValid));
-
-% =========================================================================
-% MEAN VALUE TIME SERIES — PAM vs Industry methods
-% For each quarter: mean across all K valid iterations.
-% Mirror of runPA figures 10-11 but averaged over MC seeds.
+% OUTPUT — Three sections: TI | Translation (OCI) | Constant Currency (CC)
+% Each section: (1) actual values table  (2) error table
+%               (3) time series figure   (4) error distributions figure
 % =========================================================================
 
-% Extract quarterly matrices [nValid x nPeriods] (needed here before error section)
-qV = @(field) mc.(field)(valid,:);
-
-PAM_TI_q_ts      = qV('FX_trans');
-PAM_TI_BOM_q_ts  = qV('FX_trans_BOM');
-PAM_OCI_q_ts     = qV('FX_transl');
-M1_TI_q_ts       = qV('M1_TI');       M1_OCI_q_ts  = qV('M1_OCI');
-M2m_TI_q_ts      = qV('M2m_TI');      M2m_OCI_q_ts = qV('M2m_OCI');
-fBOM_q_ts        = qV('flowCC_BOM_total');
-fBonds_q_ts      = qV('flowCC_bonds_total');
-CC_avg_ts        = qV('CC_avg_TI')  + qV('CC_avg_OCI');
-CC_close_ts      = qV('CC_close_TI') + qV('CC_close_OCI');
-M1_CC_ts         = qV('M1_CC_TI')   + qV('M1_CC_OCI');
-
-% Mean across K iterations for each quarter
-muPAM_TI    = mean(PAM_TI_q_ts,    1) / 1e6;
-muPAM_BOM   = mean(PAM_TI_BOM_q_ts,1) / 1e6;
-muPAM_OCI   = mean(PAM_OCI_q_ts,   1) / 1e6;
-muM1_TI     = mean(M1_TI_q_ts,     1) / 1e6;
-muM2m_TI    = mean(M2m_TI_q_ts,    1) / 1e6;
-muM1_OCI    = mean(M1_OCI_q_ts,    1) / 1e6;
-muM2m_OCI   = mean(M2m_OCI_q_ts,   1) / 1e6;
-muFBOM      = mean(fBOM_q_ts,       1) / 1e6;
-muFBonds    = mean(fBonds_q_ts,     1) / 1e6;
-muCC_avg    = mean(CC_avg_ts,       1) / 1e6;
-muCC_close  = mean(CC_close_ts,     1) / 1e6;
-muM1_CC     = mean(M1_CC_ts,        1) / 1e6;
-
-qx = 1:nPeriods; % x-axis: quarter index
-
-% --- Figure 20: Non-cumulative mean values per quarter -------------------
-figure(20); clf;
-
-subplot(3,1,1); hold on;
-plot(qx, muPAM_TI,  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM (bonds)');
-plot(qx, muPAM_BOM, 'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM (BOM)');
-plot(qx, muM1_TI,   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
-plot(qx, muM2m_TI,  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
-yline(0, 'k--', 'LineWidth', 0.8);
-set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
-ylabel('SEK million'); title('Transactional Impact (TI) — Mean per quarter');
-legend('Location', 'Best'); grid on;
-
-subplot(3,1,2); hold on;
-plot(qx, muPAM_OCI,  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM');
-plot(qx, muM1_OCI,   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
-plot(qx, muM2m_OCI,  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
-yline(0, 'k--', 'LineWidth', 0.8);
-set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
-ylabel('SEK million'); title('Translation / OCI — Mean per quarter');
-legend('Location', 'Best'); grid on;
-
-subplot(3,1,3); hold on;
-plot(qx, muFBOM,    'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM-flow BOM');
-plot(qx, muFBonds,  'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM-flow Bonds');
-plot(qx, muM1_CC,   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC (M1/avg)');
-plot(qx, muCC_close,'m-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC close');
-yline(0, 'k--', 'LineWidth', 0.8);
-set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
-ylabel('SEK million'); title('Constant Currency (CC) — Mean per quarter');
-legend('Location', 'Best'); grid on;
-
-sgtitle(sprintf('PAM vs Industry — Mean quarterly values (K=%d iterations)', nValid));
-
-% --- Figure 21: Cumulative mean values -----------------------------------
-figure(21); clf;
-
-subplot(3,1,1); hold on;
-plot(qx, cumsum(muPAM_TI),  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM (bonds)');
-plot(qx, cumsum(muPAM_BOM), 'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM (BOM)');
-plot(qx, cumsum(muM1_TI),   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
-plot(qx, cumsum(muM2m_TI),  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
-yline(0, 'k--', 'LineWidth', 0.8);
-set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
-ylabel('SEK million'); title('Transactional Impact (TI) — Cumulative mean');
-legend('Location', 'Best'); grid on;
-
-subplot(3,1,2); hold on;
-plot(qx, cumsum(muPAM_OCI),  'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM');
-plot(qx, cumsum(muM1_OCI),   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M1');
-plot(qx, cumsum(muM2m_OCI),  'g-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'M2 monthly');
-yline(0, 'k--', 'LineWidth', 0.8);
-set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
-ylabel('SEK million'); title('Translation / OCI — Cumulative mean');
-legend('Location', 'Best'); grid on;
-
-subplot(3,1,3); hold on;
-plot(qx, cumsum(muFBOM),    'b-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'PAM-flow BOM');
-plot(qx, cumsum(muFBonds),  'b--s', 'LineWidth', 1.2, 'MarkerSize', 4, 'DisplayName', 'PAM-flow Bonds');
-plot(qx, cumsum(muM1_CC),   'r-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC (M1/avg)');
-plot(qx, cumsum(muCC_close),'m-o',  'LineWidth', 1.8, 'MarkerSize', 4, 'DisplayName', 'CC close');
-yline(0, 'k--', 'LineWidth', 0.8);
-set(gca, 'XTick', qx, 'XTickLabel', qLabels, 'XTickLabelRotation', 45);
-ylabel('SEK million'); title('Constant Currency (CC) — Cumulative mean');
-legend('Location', 'Best'); grid on;
-
-sgtitle(sprintf('PAM vs Industry — Cumulative mean values (K=%d iterations)', nValid));
-
-% =========================================================================
-% ERROR TERM ANALYSIS
-% Quarterly errors [nValid x nPeriods] — statistics over all K*nPeriods
-% observations, preserving the full quarterly structure.
-% Columns: ME | Std | 95% CI | RMSE  (all in SEK)
-%   ME   = mean error — systematic bias           Eq. (me)
-%   Std  = std dev of errors — variability        Eq. (std)
-%   95%CI= ME ± 1.96*Std/sqrt(N) via CLT         Eq. (ci)
-%   RMSE = sqrt(ME^2 + Std^2) approx             Eq. (rmse)
-% =========================================================================
-
-% Extract quarterly matrices [nValid x nPeriods]
-qV = @(field) mc.(field)(valid,:);
-
-PAM_TI_q      = qV('FX_trans');
-PAM_TI_BOM_q  = qV('FX_trans_BOM');
-PAM_OCI_q     = qV('FX_transl');
-M1_TI_q       = qV('M1_TI');         M1_OCI_q    = qV('M1_OCI');
-M2w_TI_q      = qV('M2w_TI');        M2w_OCI_q   = qV('M2w_OCI');
-M2m_TI_q      = qV('M2m_TI');        M2m_OCI_q   = qV('M2m_OCI');
-M2q_TI_q      = qV('M2q_TI');        M2q_OCI_q   = qV('M2q_OCI');
-fSnap_q       = qV('flowCC_snap_total');
-fBonds_q      = qV('flowCC_bonds_total');
-fBOM_q        = qV('flowCC_BOM_total');
-M1_CC_q       = qV('M1_CC_TI');
-CC_avg_TI_q   = qV('CC_avg_TI');
-CC_close_TI_q = qV('CC_close_TI');
-M1_CC_OCI_q   = qV('M1_CC_OCI');
-CC_avg_OCI_q  = qV('CC_avg_OCI');
-CC_close_OCI_q= qV('CC_close_OCI');
-
+qLabels  = datestr(periodDates(2:end), 'yyyy-Qq');
+qx       = 1:nPeriods;
+colors   = {[0.12 0.47 0.71],[0.20 0.63 0.17],[0.89 0.10 0.11],[0.60 0.40 0.12],[0.55 0.34 0.72]};
+mu       = @(M) mean(M,1)/1e6;   % mean over K, scale to SEK millions
 printRow = @(label, A, B) printErrRow(label, A(:), B(:));
 kdeplot  = @(ax, e, lbl, col) plotSilvermanKDE(ax, e, lbl, col);
-N_obs    = nValid * nPeriods;
+
+% --- Extract quarterly matrices [nValid x nPeriods] ----------------------
+qV = @(field) mc.(field)(valid,:);
+
+PAM_TI_q     = qV('FX_trans');
+PAM_TI_BOM_q = qV('FX_trans_BOM');
+PAM_OCI_q    = qV('FX_transl');
+M1_TI_q      = qV('M1_TI');    M1_OCI_q  = qV('M1_OCI');
+M2w_TI_q     = qV('M2w_TI');   M2w_OCI_q = qV('M2w_OCI');
+M2m_TI_q     = qV('M2m_TI');   M2m_OCI_q = qV('M2m_OCI');
+M2q_TI_q     = qV('M2q_TI');   M2q_OCI_q = qV('M2q_OCI');
+fSnap_q      = qV('flowCC_snap_total');
+fBonds_q     = qV('flowCC_bonds_total');
+fBOM_q       = qV('flowCC_BOM_total');
+M1_CC_q      = qV('M1_CC_TI')    + qV('M1_CC_OCI');
+CC_avg_q     = qV('CC_avg_TI')   + qV('CC_avg_OCI');
+CC_close_q   = qV('CC_close_TI') + qV('CC_close_OCI');
+
+N_obs = nValid * nPeriods;
 
 % =========================================================================
-% TABLE 1 — Transactional Impact (TI): PAM benchmark vs all methods
+%  SECTION 1 — TRANSACTIONAL IMPACT (TI)
 % =========================================================================
 fprintf('\n');
-fprintf('ERROR TERMS — Transactional Impact (TI)\n');
-fprintf('N = %d quarterly obs (%d iterations x %d quarters) | Benchmark: PAM Bonds\n', ...
-  N_obs, nValid, nPeriods);
+fprintf('##########################################################################\n');
+fprintf('##  SECTION 1: TRANSACTIONAL IMPACT (TI)                              ##\n');
+fprintf('##########################################################################\n');
+
+% --- 1a. Actual values table ----------------------------------------------
+fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
+printActualTable( ...
+  {'PAM bonds','PAM BOM','M1','M2 weekly','M2 monthly','M2 quarterly'}, ...
+  {PAM_TI_q, PAM_TI_BOM_q, M1_TI_q, M2w_TI_q, M2m_TI_q, M2q_TI_q}, ...
+  periodDates, nPeriods);
+
+% --- 1b. Error table ------------------------------------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds\n');
+fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
 printHeader();
 printRow('PAM bonds  vs  M1',           PAM_TI_q,     M1_TI_q);
 printRow('PAM bonds  vs  M2 weekly',    PAM_TI_q,     M2w_TI_q);
@@ -570,17 +450,72 @@ printRow('PAM BOM    vs  M2 monthly',   PAM_TI_BOM_q, M2m_TI_q);
 printRow('PAM BOM    vs  M2 quarterly', PAM_TI_BOM_q, M2q_TI_q);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry vs industry\n');
-printRow('M1         vs  M2 weekly',    M1_TI_q,      M2w_TI_q);
-printRow('M1         vs  M2 monthly',   M1_TI_q,      M2m_TI_q);
-printRow('M1         vs  M2 quarterly', M1_TI_q,      M2q_TI_q);
+printRow('M1         vs  M2 weekly',    M1_TI_q, M2w_TI_q);
+printRow('M1         vs  M2 monthly',   M1_TI_q, M2m_TI_q);
+printRow('M1         vs  M2 quarterly', M1_TI_q, M2q_TI_q);
+
+% --- 1c. Figure 10: TI mean time series (non-cumulative + cumulative) ----
+figure(10); clf;
+subplot(2,1,1); hold on;
+plot(qx, mu(PAM_TI_q),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM (bonds)');
+plot(qx, mu(PAM_TI_BOM_q), 'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM (BOM)');
+plot(qx, mu(M1_TI_q),      'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, mu(M2m_TI_q),     'g-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
+ylabel('SEK million'); title('TI — Mean per quarter'); legend('Location','Best'); grid on;
+
+subplot(2,1,2); hold on;
+plot(qx, cumsum(mu(PAM_TI_q)),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM (bonds)');
+plot(qx, cumsum(mu(PAM_TI_BOM_q)), 'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM (BOM)');
+plot(qx, cumsum(mu(M1_TI_q)),      'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, cumsum(mu(M2m_TI_q)),     'g-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
+ylabel('SEK million'); title('TI — Cumulative mean'); legend('Location','Best'); grid on;
+sgtitle(sprintf('Transactional Impact (TI) — Mean values (K=%d)', nValid));
+
+% --- 1d. Figure 11: TI error distributions (boxplot + KDE) ---------------
+err_TI_M1  = (PAM_TI_q - M1_TI_q)  / 1e6;
+err_TI_M2w = (PAM_TI_q - M2w_TI_q) / 1e6;
+err_TI_M2m = (PAM_TI_q - M2m_TI_q) / 1e6;
+err_TI_M2q = (PAM_TI_q - M2q_TI_q) / 1e6;
+
+figure(11); clf;
+subplot(2,1,1);
+boxplot([err_TI_M1(:), err_TI_M2w(:), err_TI_M2m(:), err_TI_M2q(:)], ...
+  'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
+yline(0,'k--'); ylabel('SEK million');
+title(sprintf('TI error distributions — boxplot (%d obs each)', N_obs));
+
+subplot(2,1,2); hold on;
+kdeplot(gca, err_TI_M1(:),  'PAM bonds vs M1',          colors{1});
+kdeplot(gca, err_TI_M2w(:), 'PAM bonds vs M2 weekly',   colors{2});
+kdeplot(gca, err_TI_M2m(:), 'PAM bonds vs M2 monthly',  colors{3});
+kdeplot(gca, err_TI_M2q(:), 'PAM bonds vs M2 quarterly',colors{4});
+xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
+legend('Location','Best'); grid on;
+title(sprintf('TI error KDE — Silverman bandwidth (N=%d obs)', N_obs));
+sgtitle(sprintf('Transactional Impact (TI) — Error Distributions (K=%d)', nValid));
 
 % =========================================================================
-% TABLE 2 — Translation / OCI: PAM benchmark vs all methods
+%  SECTION 2 — TRANSLATION / OCI
 % =========================================================================
 fprintf('\n');
-fprintf('ERROR TERMS — Translation / OCI\n');
-fprintf('N = %d quarterly obs (%d iterations x %d quarters) | Benchmark: PAM Translation\n', ...
-  N_obs, nValid, nPeriods);
+fprintf('##########################################################################\n');
+fprintf('##  SECTION 2: TRANSLATION / OCI                                      ##\n');
+fprintf('##########################################################################\n');
+
+% --- 2a. Actual values table ----------------------------------------------
+fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
+printActualTable( ...
+  {'PAM','M1','M2 weekly','M2 monthly','M2 quarterly'}, ...
+  {PAM_OCI_q, M1_OCI_q, M2w_OCI_q, M2m_OCI_q, M2q_OCI_q}, ...
+  periodDates, nPeriods);
+
+% --- 2b. Error table ------------------------------------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM Translation\n');
+fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
 printHeader();
 printRow('PAM transl  vs  M1 OCI',       PAM_OCI_q, M1_OCI_q);
 printRow('PAM transl  vs  M2 weekly',    PAM_OCI_q, M2w_OCI_q);
@@ -588,174 +523,140 @@ printRow('PAM transl  vs  M2 monthly',   PAM_OCI_q, M2m_OCI_q);
 printRow('PAM transl  vs  M2 quarterly', PAM_OCI_q, M2q_OCI_q);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry vs industry\n');
-printRow('M1 OCI      vs  M2 weekly',    M1_OCI_q,  M2w_OCI_q);
-printRow('M1 OCI      vs  M2 monthly',   M1_OCI_q,  M2m_OCI_q);
-printRow('M1 OCI      vs  M2 quarterly', M1_OCI_q,  M2q_OCI_q);
+printRow('M1 OCI      vs  M2 weekly',    M1_OCI_q, M2w_OCI_q);
+printRow('M1 OCI      vs  M2 monthly',   M1_OCI_q, M2m_OCI_q);
+printRow('M1 OCI      vs  M2 quarterly', M1_OCI_q, M2q_OCI_q);
 
-% =========================================================================
-% TABLE 3 — Constant Currency (CC): PAM flow modes vs all industry CC
-% =========================================================================
-fprintf('\n');
-fprintf('ERROR TERMS — Constant Currency (CC)\n');
-fprintf('N = %d quarterly obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
-fprintf('PAM flow CC modes (snap/bonds/BOM) vs all industry CC variants\n');
-printHeader();
-fprintf('  PAM snap (= recognition-day rate)\n');
-printRow('snap  vs  M1 CC (delivery rate)',  fSnap_q, M1_CC_q);
-printRow('snap  vs  CC avg (monthly avg)',   fSnap_q, CC_avg_TI_q);
-printRow('snap  vs  CC close (period open)', fSnap_q, CC_close_TI_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM bonds (recognition to payment)\n');
-printRow('bonds vs  M1 CC (delivery rate)',  fBonds_q, M1_CC_q);
-printRow('bonds vs  CC avg (monthly avg)',   fBonds_q, CC_avg_TI_q);
-printRow('bonds vs  CC close (period open)', fBonds_q, CC_close_TI_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM BOM (order to payment)\n');
-printRow('BOM   vs  M1 CC (delivery rate)',  fBOM_q, M1_CC_q);
-printRow('BOM   vs  CC avg (monthly avg)',   fBOM_q, CC_avg_TI_q);
-printRow('BOM   vs  CC close (period open)', fBOM_q, CC_close_TI_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  Industry CC vs industry CC\n');
-printRow('M1 CC       vs  CC avg',           M1_CC_q,       CC_avg_TI_q);
-printRow('M1 CC       vs  CC close',         M1_CC_q,       CC_close_TI_q);
-printRow('CC avg      vs  CC close',          CC_avg_TI_q,   CC_close_TI_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM flow modes vs each other\n');
-printRow('snap  vs  bonds',                  fSnap_q,  fBonds_q);
-printRow('snap  vs  BOM',                    fSnap_q,  fBOM_q);
-printRow('bonds vs  BOM',                    fBonds_q, fBOM_q);
-
-% =========================================================================
-% PLOTS — Quarterly error distributions
-% =========================================================================
-
-% --- Figure 11: TI quarterly errors across all K*nPeriods obs -------------
-figure(11); clf;
-err_TI_M1  = (PAM_TI_q - M1_TI_q)  / 1e6;  % [nValid x nPeriods]
-err_TI_M2w = (PAM_TI_q - M2w_TI_q) / 1e6;
-err_TI_M2m = (PAM_TI_q - M2m_TI_q) / 1e6;
-err_TI_M2q = (PAM_TI_q - M2q_TI_q) / 1e6;
-
-subplot(2,1,1);
-allErrs = [err_TI_M1(:), err_TI_M2w(:), err_TI_M2m(:), err_TI_M2q(:)];
-boxplot(allErrs, 'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('TI quarterly error distribution (%d obs each)', nValid*nPeriods));
-
-subplot(2,1,2);
-% Mean quarterly error per quarter (averaged over K iterations)
-plot(mean(err_TI_M1,1),  'b-o', 'MarkerSize', 3); hold on;
-plot(mean(err_TI_M2m,1), 'g-o', 'MarkerSize', 3);
-plot(mean(err_TI_M2q,1), 'r-o', 'MarkerSize', 3);
-yline(0,'k--');
-legend('PAM-M1','PAM-M2m','PAM-M2q','Location','Best');
-ylabel('SEK million'); xlabel('Quarter');
-title('Mean TI error per quarter (averaged over K iterations)');
-sgtitle(sprintf('Transactional Impact — Quarterly Error Analysis (K=%d)', nValid));
-
-% --- Figure 12: M2 averaging window comparison ----------------------------
+% --- 2c. Figure 12: OCI mean time series ----------------------------------
 figure(12); clf;
-subplot(2,1,1);
-m2e_TI = [reshape(M1_TI_q-M2w_TI_q,[],1), reshape(M1_TI_q-M2m_TI_q,[],1), reshape(M1_TI_q-M2q_TI_q,[],1)] / 1e6;
-boxplot(m2e_TI, 'Labels', {'M1-M2 weekly','M1-M2 monthly','M1-M2 quarterly'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('TI: M1 vs M2 by averaging window (%d quarterly obs)', nValid*nPeriods));
+subplot(2,1,1); hold on;
+plot(qx, mu(PAM_OCI_q),  'b-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
+plot(qx, mu(M1_OCI_q),   'r-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, mu(M2m_OCI_q),  'g-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
+ylabel('SEK million'); title('OCI — Mean per quarter'); legend('Location','Best'); grid on;
 
-subplot(2,1,2);
-m2e_OCI = [reshape(M1_OCI_q-M2w_OCI_q,[],1), reshape(M1_OCI_q-M2m_OCI_q,[],1), reshape(M1_OCI_q-M2q_OCI_q,[],1)] / 1e6;
-boxplot(m2e_OCI, 'Labels', {'M1-M2 weekly','M1-M2 monthly','M1-M2 quarterly'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('OCI: M1 vs M2 by averaging window (%d quarterly obs)', nValid*nPeriods));
-sgtitle(sprintf('Industry Method Comparison: M1 vs M2 (K=%d)', nValid));
+subplot(2,1,2); hold on;
+plot(qx, cumsum(mu(PAM_OCI_q)),  'b-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
+plot(qx, cumsum(mu(M1_OCI_q)),   'r-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+plot(qx, cumsum(mu(M2m_OCI_q)),  'g-o', 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
+ylabel('SEK million'); title('OCI — Cumulative mean'); legend('Location','Best'); grid on;
+sgtitle(sprintf('Translation / OCI — Mean values (K=%d)', nValid));
 
-% --- Figure 13: PAM flow CC modes vs M1 CC --------------------------------
-figure(13); clf;
-err_snap  = (fSnap_q  - M1_CC_q) / 1e6;
-err_bonds = (fBonds_q - M1_CC_q) / 1e6;
-err_BOM   = (fBOM_q   - M1_CC_q) / 1e6;
-
-subplot(2,1,1);
-boxplot([err_snap(:), err_bonds(:), err_BOM(:), ...
-         reshape((fSnap_q-CC_avg_TI_q)/1e6,[],1), reshape((fBonds_q-CC_avg_TI_q)/1e6,[],1)], ...
-  'Labels', {'snap-M1','bonds-M1','BOM-M1','snap-avg','bonds-avg'});
-yline(0,'k--'); ylabel('SEK million');
-title(sprintf('CC quarterly error distribution (%d obs each)', nValid*nPeriods));
-
-subplot(2,1,2);
-plot(mean(err_snap,1),  'b-o', 'MarkerSize', 3); hold on;
-plot(mean(err_bonds,1), 'r-o', 'MarkerSize', 3);
-plot(mean(err_BOM,1),   'g-o', 'MarkerSize', 3);
-yline(0,'k--');
-legend('snap-M1CC','bonds-M1CC','BOM-M1CC','Location','Best');
-ylabel('SEK million'); xlabel('Quarter');
-title('Mean CC error per quarter (averaged over K iterations)');
-sgtitle(sprintf('Constant Currency — PAM flow modes vs M1 CC (K=%d)', nValid));
-
-% =========================================================================
-% KDE PLOTS — Silverman bandwidth: h = 0.9*min(sigma,IQR/1.34)*N^(-1/5)
-% Overlaid distributions allow direct comparison of how error changes
-% with averaging interval (Eq. silverman_method, Sawitzki 1999).
-% =========================================================================
-colors = {[0.12 0.47 0.71],[0.20 0.63 0.17],[0.89 0.10 0.11],[0.60 0.40 0.12]};
-
-% --- Figure 14: TI KDE ---------------------------------------------------
-figure(14); clf; hold on;
-kdeplot(gca, err_TI_M1(:),  'PAM bonds vs M1',       colors{1});
-kdeplot(gca, err_TI_M2w(:), 'PAM bonds vs M2 weekly',colors{2});
-kdeplot(gca, err_TI_M2m(:), 'PAM bonds vs M2 monthly',colors{3});
-kdeplot(gca, err_TI_M2q(:), 'PAM bonds vs M2 quarterly',colors{4});
-xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-title(sprintf('TI error KDE — Silverman bandwidth (N=%d obs)', nValid*nPeriods));
-
-% --- Figure 15: OCI KDE --------------------------------------------------
+% --- 2d. Figure 13: OCI error distributions -------------------------------
 err_OCI_M1  = (PAM_OCI_q - M1_OCI_q)  / 1e6;
 err_OCI_M2w = (PAM_OCI_q - M2w_OCI_q) / 1e6;
 err_OCI_M2m = (PAM_OCI_q - M2m_OCI_q) / 1e6;
 err_OCI_M2q = (PAM_OCI_q - M2q_OCI_q) / 1e6;
 
-figure(15); clf; hold on;
-kdeplot(gca, err_OCI_M1(:),  'PAM transl vs M1 OCI',        colors{1});
-kdeplot(gca, err_OCI_M2w(:), 'PAM transl vs M2 weekly OCI', colors{2});
-kdeplot(gca, err_OCI_M2m(:), 'PAM transl vs M2 monthly OCI',colors{3});
-kdeplot(gca, err_OCI_M2q(:), 'PAM transl vs M2 qtrly OCI',  colors{4});
-xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-title(sprintf('OCI error KDE — Silverman bandwidth (N=%d obs)', nValid*nPeriods));
+figure(13); clf;
+subplot(2,1,1);
+boxplot([err_OCI_M1(:), err_OCI_M2w(:), err_OCI_M2m(:), err_OCI_M2q(:)], ...
+  'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
+yline(0,'k--'); ylabel('SEK million');
+title(sprintf('OCI error distributions — boxplot (%d obs each)', N_obs));
 
-% --- Figure 16: CC KDE — PAM flow modes vs M1 CC -------------------------
-err_snap_M1CC  = (fSnap_q  - M1_CC_q)       / 1e6;
-err_bonds_M1CC = (fBonds_q - M1_CC_q)        / 1e6;
-err_BOM_M1CC   = (fBOM_q   - M1_CC_q)        / 1e6;
-figure(16); clf; hold on;
-kdeplot(gca, err_snap_M1CC(:),  'snap vs M1 CC',  colors{1});
-kdeplot(gca, err_bonds_M1CC(:), 'bonds vs M1 CC', colors{2});
-kdeplot(gca, err_BOM_M1CC(:),   'BOM vs M1 CC',   colors{3});
+subplot(2,1,2); hold on;
+kdeplot(gca, err_OCI_M1(:),  'PAM vs M1 OCI',          colors{1});
+kdeplot(gca, err_OCI_M2w(:), 'PAM vs M2 weekly OCI',   colors{2});
+kdeplot(gca, err_OCI_M2m(:), 'PAM vs M2 monthly OCI',  colors{3});
+kdeplot(gca, err_OCI_M2q(:), 'PAM vs M2 quarterly OCI',colors{4});
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on;
-title(sprintf('CC error KDE: PAM flow modes vs M1 CC (N=%d obs)', nValid*nPeriods));
+title(sprintf('OCI error KDE — Silverman bandwidth (N=%d obs)', N_obs));
+sgtitle(sprintf('Translation / OCI — Error Distributions (K=%d)', nValid));
 
-% --- Figure 17: CC KDE — PAM flow modes vs CC avg ------------------------
-err_snap_avg  = (fSnap_q  - CC_avg_TI_q) / 1e6;
-err_bonds_avg = (fBonds_q - CC_avg_TI_q) / 1e6;
-err_BOM_avg   = (fBOM_q   - CC_avg_TI_q) / 1e6;
-figure(17); clf; hold on;
-kdeplot(gca, err_snap_avg(:),  'snap vs CC avg',  colors{1});
-kdeplot(gca, err_bonds_avg(:), 'bonds vs CC avg', colors{2});
-kdeplot(gca, err_BOM_avg(:),   'BOM vs CC avg',   colors{3});
-xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-title(sprintf('CC error KDE: PAM flow modes vs CC avg (N=%d obs)', nValid*nPeriods));
+% =========================================================================
+%  SECTION 3 — CONSTANT CURRENCY (CC)
+% =========================================================================
+fprintf('\n');
+fprintf('##########################################################################\n');
+fprintf('##  SECTION 3: CONSTANT CURRENCY (CC)                                 ##\n');
+fprintf('##########################################################################\n');
 
-% --- Figure 18: CC KDE — industry CC methods vs each other ---------------
-err_M1_avg   = (M1_CC_q - CC_avg_TI_q)   / 1e6;
-err_M1_close = (M1_CC_q - CC_close_TI_q) / 1e6;
-figure(18); clf; hold on;
-kdeplot(gca, err_M1_avg(:),   'M1 CC vs CC avg',   colors{1});
-kdeplot(gca, err_M1_close(:), 'M1 CC vs CC close', colors{2});
+% --- 3a. Actual values table ----------------------------------------------
+fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
+printActualTable( ...
+  {'PAM snap','PAM bonds','PAM BOM','M1 CC','CC avg','CC close'}, ...
+  {fSnap_q, fBonds_q, fBOM_q, M1_CC_q, CC_avg_q, CC_close_q}, ...
+  periodDates, nPeriods);
+
+% --- 3b. Error table ------------------------------------------------------
+fprintf('\nError terms (quarterly obs) | PAM flow modes vs industry CC\n');
+fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
+printHeader();
+fprintf('  PAM snap vs industry\n');
+printRow('snap  vs  M1 CC',    fSnap_q, M1_CC_q);
+printRow('snap  vs  CC avg',   fSnap_q, CC_avg_q);
+printRow('snap  vs  CC close', fSnap_q, CC_close_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM bonds vs industry\n');
+printRow('bonds vs  M1 CC',    fBonds_q, M1_CC_q);
+printRow('bonds vs  CC avg',   fBonds_q, CC_avg_q);
+printRow('bonds vs  CC close', fBonds_q, CC_close_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM BOM vs industry\n');
+printRow('BOM   vs  M1 CC',    fBOM_q, M1_CC_q);
+printRow('BOM   vs  CC avg',   fBOM_q, CC_avg_q);
+printRow('BOM   vs  CC close', fBOM_q, CC_close_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  Industry CC vs industry CC\n');
+printRow('M1 CC       vs  CC avg',   M1_CC_q,  CC_avg_q);
+printRow('M1 CC       vs  CC close', M1_CC_q,  CC_close_q);
+printRow('CC avg      vs  CC close', CC_avg_q, CC_close_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM flow modes vs each other\n');
+printRow('snap  vs  bonds', fSnap_q,  fBonds_q);
+printRow('snap  vs  BOM',   fSnap_q,  fBOM_q);
+printRow('bonds vs  BOM',   fBonds_q, fBOM_q);
+
+% --- 3c. Figure 14: CC mean time series -----------------------------------
+figure(14); clf;
+subplot(2,1,1); hold on;
+plot(qx, mu(fBOM_q),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM-flow BOM');
+plot(qx, mu(fBonds_q),   'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM-flow Bonds');
+plot(qx, mu(M1_CC_q),    'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC (=avg)');
+plot(qx, mu(CC_close_q), 'm-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
+ylabel('SEK million'); title('CC — Mean per quarter'); legend('Location','Best'); grid on;
+
+subplot(2,1,2); hold on;
+plot(qx, cumsum(mu(fBOM_q)),     'b-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM-flow BOM');
+plot(qx, cumsum(mu(fBonds_q)),   'b--s', 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM-flow Bonds');
+plot(qx, cumsum(mu(M1_CC_q)),    'r-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC (=avg)');
+plot(qx, cumsum(mu(CC_close_q)), 'm-o',  'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+yline(0,'k--','LineWidth',0.8);
+set(gca,'XTick',qx,'XTickLabel',qLabels,'XTickLabelRotation',45);
+ylabel('SEK million'); title('CC — Cumulative mean'); legend('Location','Best'); grid on;
+sgtitle(sprintf('Constant Currency (CC) — Mean values (K=%d)', nValid));
+
+% --- 3d. Figure 15: CC error distributions --------------------------------
+err_BOM_M1    = (fBOM_q   - M1_CC_q)    / 1e6;
+err_BOM_avg   = (fBOM_q   - CC_avg_q)   / 1e6;
+err_BOM_close = (fBOM_q   - CC_close_q) / 1e6;
+err_bonds_M1  = (fBonds_q - M1_CC_q)    / 1e6;
+err_bonds_avg = (fBonds_q - CC_avg_q)   / 1e6;
+
+figure(15); clf;
+subplot(2,1,1);
+boxplot([err_BOM_M1(:), err_BOM_avg(:), err_BOM_close(:), err_bonds_M1(:), err_bonds_avg(:)], ...
+  'Labels', {'BOM-M1','BOM-avg','BOM-close','bonds-M1','bonds-avg'});
+yline(0,'k--'); ylabel('SEK million');
+title(sprintf('CC error distributions — boxplot (%d obs each)', N_obs));
+
+subplot(2,1,2); hold on;
+kdeplot(gca, err_BOM_M1(:),    'PAM BOM vs M1 CC',    colors{1});
+kdeplot(gca, err_BOM_avg(:),   'PAM BOM vs CC avg',   colors{2});
+kdeplot(gca, err_BOM_close(:), 'PAM BOM vs CC close', colors{3});
+kdeplot(gca, err_bonds_M1(:),  'PAM bonds vs M1 CC',  colors{4});
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on;
-title(sprintf('CC error KDE: industry CC variants vs each other (N=%d obs)', nValid*nPeriods));
+title(sprintf('CC error KDE — Silverman bandwidth (N=%d obs)', N_obs));
+sgtitle(sprintf('Constant Currency (CC) — Error Distributions (K=%d)', nValid));
 
 % =========================================================================
 % LOCAL FUNCTIONS
@@ -784,4 +685,28 @@ function plotSilvermanKDE(ax, e, lbl, col)
   h  = 0.9 * min(s, iqr(e)/1.34) * N^(-1/5);
   [f, xi] = ksdensity(e, 'Bandwidth', h);
   plot(ax, xi, f, 'Color', col, 'LineWidth', 1.8, 'DisplayName', lbl);
+end
+
+function printActualTable(methodNames, matrices, periodDates, nPeriods)
+% Print a table of mean values per quarter for each method (SEK millions).
+  nc   = length(methodNames);
+  colW = 13;
+  fprintf('%-12s', 'Quarter');
+  for m = 1:nc
+    fprintf('%*s', colW, methodNames{m});
+  end
+  fprintf('\n%s\n', repmat('-', 1, 12 + colW*nc));
+  for p = 1:nPeriods
+    fprintf('%-12s', datestr(periodDates(p+1), 'yyyy-Qq'));
+    for m = 1:nc
+      fprintf('%*s', colW, sprintf('%.1f', mean(matrices{m}(:,p))/1e6));
+    end
+    fprintf('\n');
+  end
+  fprintf('%s\n', repmat('-', 1, 12 + colW*nc));
+  fprintf('%-12s', 'TOTAL');
+  for m = 1:nc
+    fprintf('%*s', colW, sprintf('%.1f', sum(mean(matrices{m},1))/1e6));
+  end
+  fprintf('\n');
 end
