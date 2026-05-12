@@ -413,9 +413,12 @@ fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
 %               (3-6) four separate figures, saved as PDF
 % =========================================================================
 
-% Folder for PDF output
-figDir = 'figures';
-if ~exist(figDir, 'dir'), mkdir(figDir); end
+% Folder for PDF output (absolute path to avoid working-directory ambiguity)
+figDir = fullfile(pwd, 'figures');
+if ~exist(figDir, 'dir')
+  [ok, msg] = mkdir(figDir);
+  if ~ok, error('Could not create figures folder: %s', msg); end
+end
 
 qx = 1:nPeriods;
 
@@ -506,7 +509,7 @@ plot(qx, mu(M2m_TI_q),     '-o',  'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'D
 yline(0,'k--','LineWidth',0.8);
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('TI — mean per quarter'); legend('Location','Best'); grid on;
-print(fig, fullfile(figDir,'TI_actual.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'TI_actual.pdf'));
 
 % --- Figure 11: TI cumulative ---------------------------------------------
 fig = figure(11); clf; hold on;
@@ -517,14 +520,14 @@ plot(qx, cumsum(mu(M2m_TI_q)),     '-o',  'Color',cM2m,'LineWidth',1.8,'MarkerSi
 yline(0,'k--','LineWidth',0.8);
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('TI — cumulative'); legend('Location','Best'); grid on;
-print(fig, fullfile(figDir,'TI_actual_cum.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'TI_actual_cum.pdf'));
 
 % --- Figure 12: TI error boxplot ------------------------------------------
 fig = figure(12); clf;
 boxplot([err_TI_M1(:), err_TI_M2w(:), err_TI_M2m(:), err_TI_M2q(:)], ...
   'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
 yline(0,'k--'); ylabel('SEK million'); title('TI — error distributions');
-print(fig, fullfile(figDir,'TI_errors_box.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'TI_errors_box.pdf'));
 
 % --- Figure 13: TI error KDE ----------------------------------------------
 fig = figure(13); clf; hold on;
@@ -534,7 +537,7 @@ kdeplot(gca, err_TI_M2m(:), 'PAM vs M2 monthly',  cM2m);
 kdeplot(gca, err_TI_M2q(:), 'PAM vs M2 quarterly',cM2q);
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('TI — error densities');
-print(fig, fullfile(figDir,'TI_errors_kde.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'TI_errors_kde.pdf'));
 
 % =========================================================================
 %  SECTION 2 — TRANSLATION / OCI
@@ -578,7 +581,7 @@ plot(qx, mu(M2m_OCI_q),  '-o', 'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'Disp
 yline(0,'k--','LineWidth',0.8);
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('OCI — mean per quarter'); legend('Location','Best'); grid on;
-print(fig, fullfile(figDir,'OCI_actual.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'OCI_actual.pdf'));
 
 % --- Figure 15: OCI cumulative --------------------------------------------
 fig = figure(15); clf; hold on;
@@ -588,14 +591,14 @@ plot(qx, cumsum(mu(M2m_OCI_q)),  '-o', 'Color',cM2m,'LineWidth',1.8,'MarkerSize'
 yline(0,'k--','LineWidth',0.8);
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('OCI — cumulative'); legend('Location','Best'); grid on;
-print(fig, fullfile(figDir,'OCI_actual_cum.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'OCI_actual_cum.pdf'));
 
 % --- Figure 16: OCI error boxplot -----------------------------------------
 fig = figure(16); clf;
 boxplot([err_OCI_M1(:), err_OCI_M2w(:), err_OCI_M2m(:), err_OCI_M2q(:)], ...
   'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
 yline(0,'k--'); ylabel('SEK million'); title('OCI — error distributions');
-print(fig, fullfile(figDir,'OCI_errors_box.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'OCI_errors_box.pdf'));
 
 % --- Figure 17: OCI error KDE ---------------------------------------------
 fig = figure(17); clf; hold on;
@@ -605,7 +608,7 @@ kdeplot(gca, err_OCI_M2m(:), 'PAM vs M2 monthly',  cM2m);
 kdeplot(gca, err_OCI_M2q(:), 'PAM vs M2 quarterly',cM2q);
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('OCI — error densities');
-print(fig, fullfile(figDir,'OCI_errors_kde.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'OCI_errors_kde.pdf'));
 
 % =========================================================================
 %  SECTION 3 — CONSTANT CURRENCY (CC)
@@ -667,7 +670,7 @@ plot(qx, mu(CC_close_q), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'D
 yline(0,'k--','LineWidth',0.8);
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('CC — mean per quarter'); legend('Location','Best'); grid on;
-print(fig, fullfile(figDir,'CC_actual.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'CC_actual.pdf'));
 
 % --- Figure 19: CC cumulative ---------------------------------------------
 fig = figure(19); clf; hold on;
@@ -679,14 +682,14 @@ plot(qx, cumsum(mu(CC_close_q)), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSi
 yline(0,'k--','LineWidth',0.8);
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('CC — cumulative'); legend('Location','Best'); grid on;
-print(fig, fullfile(figDir,'CC_actual_cum.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'CC_actual_cum.pdf'));
 
 % --- Figure 20: CC error boxplot ------------------------------------------
 fig = figure(20); clf;
 boxplot([err_BOM_M1(:), err_BOM_avg(:), err_BOM_close(:), err_bonds_M1(:), err_bonds_avg(:)], ...
   'Labels', {'BOM-M1','BOM-avg','BOM-close','bonds-M1','bonds-avg'});
 yline(0,'k--'); ylabel('SEK million'); title('CC — error distributions');
-print(fig, fullfile(figDir,'CC_errors_box.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'CC_errors_box.pdf'));
 
 % --- Figure 21: CC error KDE ----------------------------------------------
 fig = figure(21); clf; hold on;
@@ -696,7 +699,7 @@ kdeplot(gca, err_BOM_close(:), 'PAM BOM vs CC close', cCCcls);
 kdeplot(gca, err_bonds_M1(:),  'PAM bonds vs M1 CC',  cM2w);
 xline(0,'k--'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('CC — error densities');
-print(fig, fullfile(figDir,'CC_errors_kde.pdf'), '-dpdf');
+saveas(fig, fullfile(figDir,'CC_errors_kde.pdf'));
 
 % =========================================================================
 % LOCAL FUNCTIONS
