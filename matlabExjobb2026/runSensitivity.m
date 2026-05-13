@@ -364,7 +364,8 @@ for pi = 1:nParams
 
   % Size and save as PDF
   set(fh, 'Units','centimeters', 'Position',[0 0 24 8]);
-  set(fh, 'PaperUnits','centimeters', 'PaperSize',[24 8], 'PaperPositionMode','auto');
+  set(fh, 'PaperUnits','centimeters', 'PaperSize',[24 8], ...
+          'PaperPosition',[0 0 24 8], 'PaperPositionMode','manual');
   pdfName = fullfile(figDir, sprintf('sensitivity_%s.pdf', paramKey));
   saveas(fh, pdfName);
   fprintf('  Figure saved: %s\n', pdfName);

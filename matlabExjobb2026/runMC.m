@@ -769,7 +769,7 @@ function formatFig(fig, w, h)
 % Set figure to exact physical size and apply consistent typography.
   set(fig, 'Units','centimeters', 'Position',[0 0 w h]);
   set(fig, 'PaperUnits','centimeters', 'PaperSize',[w h], ...
-           'PaperPositionMode','auto');
+           'PaperPosition',[0 0 w h], 'PaperPositionMode','manual');
   ax = gca;
   ax.FontSize        = 9;   % tick labels
   ax.Title.FontSize  = 11;
