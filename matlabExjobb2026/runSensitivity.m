@@ -25,10 +25,6 @@
 % Usage:
 %   runSensitivity                 % default K = 50
 %   K = 100; runSensitivity        % override K
-delete(gcp('nocreate'))     % kill existing pool
-parpool('local', 4)          % spawn 4 workers (adjust based on your RAM)
-clear mc dc dp dr pnl bs    % free any large workspace vars from earlier runs
-runSensitivity
 if ~exist('K', 'var'), K = 10; end
 
 % =========================================================================
@@ -307,45 +303,71 @@ end
 % =========================================================================
 % PLOTS — one figure per parameter, three subplots (TI / OCI / CC)
 % =========================================================================
-colors = {[0.12 0.47 0.71],[0.20 0.63 0.17],[0.89 0.10 0.11],[0.60 0.40 0.12],[0.55 0.34 0.72]};
+cM1    = [0.89 0.10 0.11];  % red
+cM2w   = [0.99 0.55 0.24];  % orange
+cM2m   = [0.20 0.63 0.17];  % green
+cM2q   = [0.55 0.34 0.72];  % purple
+cPAM   = [0.12 0.47 0.71];  % blue
+cCCavg = [0.60 0.40 0.12];  % brown
+cCCcls = [0.84 0.19 0.87];  % pink
+
+% Set up figures folder matching runMC convention
+figDir = fullfile(pwd, 'figures');
+if ~exist(figDir, 'dir'), mkdir(figDir); end
 
 for pi = 1:nParams
   fh = figure(100 + pi); clf;
   paramLabel = paramSweeps{pi, 2};
+  paramKey   = paramSweeps{pi, 1};
 
   % --- TI subplot ---
   subplot(1,3,1); hold on;
-  plot(scalings, results.rmse_TI.M1(pi,:)/1e6,  '-o', 'Color', colors{1}, 'LineWidth', 1.6, 'DisplayName', 'M1');
-  plot(scalings, results.rmse_TI.M2w(pi,:)/1e6, '-o', 'Color', colors{2}, 'LineWidth', 1.6, 'DisplayName', 'M2 weekly');
-  plot(scalings, results.rmse_TI.M2m(pi,:)/1e6, '-o', 'Color', colors{3}, 'LineWidth', 1.6, 'DisplayName', 'M2 monthly');
-  plot(scalings, results.rmse_TI.M2q(pi,:)/1e6, '-o', 'Color', colors{4}, 'LineWidth', 1.6, 'DisplayName', 'M2 quarterly');
+  plot(scalings, results.rmse_TI.M1(pi,:)/1e6,  '-o', 'Color',cM1,  'LineWidth',1.6,'DisplayName','M1');
+  plot(scalings, results.rmse_TI.M2w(pi,:)/1e6, '-o', 'Color',cM2w, 'LineWidth',1.6,'DisplayName','M2 weekly');
+  plot(scalings, results.rmse_TI.M2m(pi,:)/1e6, '-o', 'Color',cM2m, 'LineWidth',1.6,'DisplayName','M2 monthly');
+  plot(scalings, results.rmse_TI.M2q(pi,:)/1e6, '-o', 'Color',cM2q, 'LineWidth',1.6,'DisplayName','M2 quarterly');
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('TI: PAM bonds vs industry'); legend('Location','Best');
+  title('TI'); legend('Location','Best');
 
   % --- OCI subplot ---
   subplot(1,3,2); hold on;
-  plot(scalings, results.rmse_OCI.M1(pi,:)/1e6,  '-o', 'Color', colors{1}, 'LineWidth', 1.6, 'DisplayName', 'M1 OCI');
-  plot(scalings, results.rmse_OCI.M2w(pi,:)/1e6, '-o', 'Color', colors{2}, 'LineWidth', 1.6, 'DisplayName', 'M2 weekly');
-  plot(scalings, results.rmse_OCI.M2m(pi,:)/1e6, '-o', 'Color', colors{3}, 'LineWidth', 1.6, 'DisplayName', 'M2 monthly');
-  plot(scalings, results.rmse_OCI.M2q(pi,:)/1e6, '-o', 'Color', colors{4}, 'LineWidth', 1.6, 'DisplayName', 'M2 quarterly');
+  plot(scalings, results.rmse_OCI.M1(pi,:)/1e6,  '-o', 'Color',cM1,  'LineWidth',1.6,'DisplayName','M1 OCI');
+  plot(scalings, results.rmse_OCI.M2w(pi,:)/1e6, '-o', 'Color',cM2w, 'LineWidth',1.6,'DisplayName','M2 weekly');
+  plot(scalings, results.rmse_OCI.M2m(pi,:)/1e6, '-o', 'Color',cM2m, 'LineWidth',1.6,'DisplayName','M2 monthly');
+  plot(scalings, results.rmse_OCI.M2q(pi,:)/1e6, '-o', 'Color',cM2q, 'LineWidth',1.6,'DisplayName','M2 quarterly');
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('OCI: PAM translation vs industry'); legend('Location','Best');
+  title('OCI'); legend('Location','Best');
 
   % --- CC subplot ---
   subplot(1,3,3); hold on;
-  plot(scalings, results.rmse_CC.M1_CC(pi,:)/1e6,     '-o', 'Color', colors{1}, 'LineWidth', 1.6, 'DisplayName', 'M1 CC');
-  plot(scalings, results.rmse_CC.CC_avg(pi,:)/1e6,    '-o', 'Color', colors{2}, 'LineWidth', 1.6, 'DisplayName', 'CC avg');
-  plot(scalings, results.rmse_CC.CC_close(pi,:)/1e6,  '-o', 'Color', colors{3}, 'LineWidth', 1.6, 'DisplayName', 'CC close');
-  plot(scalings, results.rmse_CC.PAM_bonds(pi,:)/1e6, '-o', 'Color', colors{4}, 'LineWidth', 1.6, 'DisplayName', 'PAM bonds');
+  plot(scalings, results.rmse_CC.M1_CC(pi,:)/1e6,     '-o', 'Color',cM1,    'LineWidth',1.6,'DisplayName','M1 CC');
+  plot(scalings, results.rmse_CC.CC_avg(pi,:)/1e6,    '-o', 'Color',cCCavg, 'LineWidth',1.6,'DisplayName','CC avg');
+  plot(scalings, results.rmse_CC.CC_close(pi,:)/1e6,  '-o', 'Color',cCCcls, 'LineWidth',1.6,'DisplayName','CC close');
+  plot(scalings, results.rmse_CC.PAM_bonds(pi,:)/1e6, '-o', 'Color',cPAM,   'LineWidth',1.6,'DisplayName','PAM bonds');
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('CC: PAM BOM vs others'); legend('Location','Best');
+  title('CC'); legend('Location','Best');
 
-  sgtitle(sprintf('Sensitivity to %s   (K=%d per cell)', paramLabel, K));
+  sgtitle(paramLabel);
 
-  % Save figure
-  figFile = sprintf('sensitivity_%s.fig', paramSweeps{pi, 1});
-  savefig(fh, figFile);
-  fprintf('  Figure saved: %s\n', figFile);
+  % Apply consistent font sizes to all subplots
+  axs = findall(fh, 'Type', 'axes');
+  for ai = 1:length(axs)
+    axs(ai).FontSize = 9;
+    axs(ai).Title.FontSize = 11;
+    axs(ai).Title.FontWeight = 'bold';
+    axs(ai).XLabel.FontSize = 10;
+    axs(ai).YLabel.FontSize = 10;
+    if ~isempty(axs(ai).Legend)
+      axs(ai).Legend.FontSize = 9;
+    end
+  end
+
+  % Size and save as PDF
+  set(fh, 'Units','centimeters', 'Position',[0 0 24 8]);
+  set(fh, 'PaperUnits','centimeters', 'PaperSize',[24 8], 'PaperPositionMode','auto');
+  pdfName = fullfile(figDir, sprintf('sensitivity_%s.pdf', paramKey));
+  saveas(fh, pdfName);
+  fprintf('  Figure saved: %s\n', pdfName);
 end
 
 % =========================================================================

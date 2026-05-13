@@ -22,8 +22,6 @@
 % SETTINGS
 % =========================================================================
 if ~exist('K',    'var'), K    = 200; end
-% Set to false to skip the no-discount sensitivity run (roughly doubles runtime)
-if ~exist('runSensitivity', 'var'), runSensitivity = true; end
 
 settings.dataFolder         = 'simulatedData';
 settings.bomPricing         = 'DeterministicCashFlows';
@@ -117,10 +115,6 @@ for mode = {'bonds','BOM'}
   end
 end
 
-% --- Sensitivity: no-discount PAM (discount factors = 1) -----------------
-mc.FX_trans_nd     = nan(K, nPeriods);
-mc.FX_trans_BOM_nd = nan(K, nPeriods);
-
 mc.seeds       = (1:K)';
 mc.periodDates = periodDates;
 
@@ -172,9 +166,6 @@ parfor k = 1:K
     % Already computed — load from disk and skip
     tmp = load(ckptFile, 'r');
     r   = tmp.r;
-    % Patch fields added after checkpoint was saved
-    if ~isfield(r, 'FX_trans_nd'),     r.FX_trans_nd     = nan(1, nPeriods); end
-    if ~isfield(r, 'FX_trans_BOM_nd'), r.FX_trans_BOM_nd = nan(1, nPeriods); end
     results{k} = r;
   else
     % Each parallel worker writes to its own subfolder to avoid file conflicts
@@ -203,9 +194,7 @@ parfor k = 1:K
       'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
       'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
       'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
-      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods), ...
-      'FX_trans_nd',     nan(1, nPeriods), ...
-      'FX_trans_BOM_nd', nan(1, nPeriods));
+      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods));
 
     createMatFilesSim(dm, k, false, wFolder, sandvikArrays);
 
@@ -232,23 +221,6 @@ parfor k = 1:K
       % r.FX_trans_CC_LY   = dr.FX_trans_CC_LY_quarterly(:)';
       % r.FX_transl_CC_LY  = dr.FX_transl_CC_LY_quarterly(:)';
       % r.FX_cc_LY_total   = dr.FX_cc_LY_total_quarterly(:)';
-
-      % --- No-discount sensitivity ----------------------------------------
-      if runSensitivity
-        dmND = dm;
-        for c_nd = 1:length(dmND.cName)
-          dmND.d{c_nd} = ones(size(dmND.d{c_nd}));
-        end
-        dp_nd = buildPA(dmND, dc);
-        dr_nd = performanceAttribution(dmND, dc, dp_nd, false);
-        for p = 1:nPeriods
-          idx = quarterIdx{p};
-          if ~isempty(idx)
-            r.FX_trans_nd(p)     = sum(dr_nd.dFX_trans(idx));
-            r.FX_trans_BOM_nd(p) = sum(dr_nd.dFX_trans_BOM(idx));
-          end
-        end
-      end
 
       % --- Shared accounting core -----------------------------------------
       bs  = buildBalanceSheet(dm, dc);
@@ -328,8 +300,6 @@ for k = 1:K
       mc.(fn)(k,:) = r.(fn);
     end
   end
-  mc.FX_trans_nd(k,:)     = r.FX_trans_nd;
-  mc.FX_trans_BOM_nd(k,:) = r.FX_trans_BOM_nd;
 end
 
 fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
@@ -747,82 +717,13 @@ formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 
 % =========================================================================
-%  SENSITIVITY — No-Discount PAM vs Industry Methods (TI only)
+% SENSITIVITY — Timing-parameter sweep
+%   Set doSensitivity = true before running to execute runSensitivity.m
+%   after the main MC completes.
 % =========================================================================
-if runSensitivity
-
-fprintf('\n');
-fprintf('##########################################################################\n');
-fprintf('##  SENSITIVITY: No-Discount PAM (TI)                                 ##\n');
-fprintf('##########################################################################\n');
-fprintf('  Discount factors set to 1 — isolates PV-discounting contribution.\n\n');
-
-% Seeds loaded from old checkpoints have NaN for sensitivity fields — filter separately
-validND  = valid & ~any(isnan(mc.FX_trans_nd), 2);
-nValidND = sum(validND);
-if nValidND == 0
-  fprintf('  No sensitivity data available — rerun with runSensitivity=true.\n');
-else
-
-PAM_TI_nd_q     = mc.FX_trans_nd(validND,:);
-PAM_TI_BOM_nd_q = mc.FX_trans_BOM_nd(validND,:);
-% Use validND subset for all methods so comparisons are on the same seeds
-PAM_TI_nd_base_q     = mc.FX_trans(validND,:);
-PAM_TI_BOM_nd_base_q = mc.FX_trans_BOM(validND,:);
-M1_TI_nd_base_q      = mc.M1_TI(validND,:);
-
-% --- Table: actual values -------------------------------------------------
-fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValidND);
-printActualTable( ...
-  {'PAM bonds','PAM b+BOM','PAM bonds ND','PAM b+BOM ND','M1'}, ...
-  {PAM_TI_nd_base_q, PAM_TI_BOM_nd_base_q, PAM_TI_nd_q, PAM_TI_BOM_nd_q, M1_TI_nd_base_q}, ...
-  periodDates, nPeriods);
-
-% --- Error table: no-discount vs M1 --------------------------------------
-N_obs_nd = nValidND * nPeriods;
-fprintf('\nError terms | No-discount PAM benchmark vs industry\n');
-fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs_nd, nValidND, nPeriods);
-printHeader();
-printRow('PAM bonds ND   vs  M1',      PAM_TI_nd_q,     M1_TI_nd_base_q);
-printRow('PAM b+BOM ND   vs  M1',      PAM_TI_BOM_nd_q, M1_TI_nd_base_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  Discount effect (normal - no-discount), same %d seeds\n', nValidND);
-printRow('PAM bonds      vs  bonds ND', PAM_TI_nd_base_q,     PAM_TI_nd_q);
-printRow('PAM b+BOM      vs  b+BOM ND', PAM_TI_BOM_nd_base_q, PAM_TI_BOM_nd_q);
-
-% --- Figure: sensitivity time series (non-cumulative) --------------------
-cND = [0.85 0.33 0.10];   % red-orange — no-discount variants
-fig = figure(30); clf; hold on;
-plot(qx, mu(PAM_TI_nd_base_q),    '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(qx, mu(PAM_TI_BOM_nd_base_q),'--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM');
-plot(qx, mu(PAM_TI_nd_q),         '-o',  'Color',cND, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds (no disc)');
-plot(qx, mu(PAM_TI_BOM_nd_q),     '--s', 'Color',cND, 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM (no disc)');
-plot(qx, mu(M1_TI_nd_base_q),     '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
-set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
-ylabel('SEK million');
-title('TI — sensitivity: no-discount PAM');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'sensitivity_TI_actual.pdf'));
-
-% --- Figure: sensitivity cumulative --------------------------------------
-fig = figure(31); clf; hold on;
-plot(qx, cumsum(mu(PAM_TI_nd_base_q)),    '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(qx, cumsum(mu(PAM_TI_BOM_nd_base_q)),'--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM');
-plot(qx, cumsum(mu(PAM_TI_nd_q)),         '-o',  'Color',cND, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds (no disc)');
-plot(qx, cumsum(mu(PAM_TI_BOM_nd_q)),     '--s', 'Color',cND, 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM (no disc)');
-plot(qx, cumsum(mu(M1_TI_nd_base_q)),     '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
-set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
-ylabel('SEK million');
-title('TI — sensitivity: no-discount PAM (cumulative)');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'sensitivity_TI_cum.pdf'));
-
-end  % nValidND > 0
-end  % runSensitivity
+if exist('doSensitivity', 'var') && doSensitivity
+  runSensitivity
+end
 
 % =========================================================================
 % LOCAL FUNCTIONS
