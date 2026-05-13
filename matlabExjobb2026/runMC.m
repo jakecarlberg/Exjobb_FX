@@ -722,6 +722,7 @@ saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 %   after the main MC completes.
 % =========================================================================
 if exist('doSensitivity', 'var') && doSensitivity
+  clear results   % runMC uses results as cell array; runSensitivity needs it as struct
   runSensitivity
 end
 
