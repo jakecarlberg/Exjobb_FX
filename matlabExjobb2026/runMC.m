@@ -22,6 +22,8 @@
 % SETTINGS
 % =========================================================================
 if ~exist('K',    'var'), K    = 200; end
+% Set to false to skip the no-discount sensitivity run (roughly doubles runtime)
+if ~exist('runSensitivity', 'var'), runSensitivity = true; end
 
 settings.dataFolder         = 'simulatedData';
 settings.bomPricing         = 'DeterministicCashFlows';
@@ -115,6 +117,10 @@ for mode = {'bonds','BOM'}
   end
 end
 
+% --- Sensitivity: no-discount PAM (discount factors = 1) -----------------
+mc.FX_trans_nd     = nan(K, nPeriods);
+mc.FX_trans_BOM_nd = nan(K, nPeriods);
+
 mc.seeds       = (1:K)';
 mc.periodDates = periodDates;
 
@@ -164,8 +170,12 @@ parfor k = 1:K
 
   if exist(ckptFile, 'file')
     % Already computed — load from disk and skip
-    tmp      = load(ckptFile, 'r');
-    results{k} = tmp.r;
+    tmp = load(ckptFile, 'r');
+    r   = tmp.r;
+    % Patch fields added after checkpoint was saved
+    if ~isfield(r, 'FX_trans_nd'),     r.FX_trans_nd     = nan(1, nPeriods); end
+    if ~isfield(r, 'FX_trans_BOM_nd'), r.FX_trans_BOM_nd = nan(1, nPeriods); end
+    results{k} = r;
   else
     % Each parallel worker writes to its own subfolder to avoid file conflicts
     t = getCurrentTask();
@@ -193,7 +203,9 @@ parfor k = 1:K
       'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
       'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
       'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
-      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods));
+      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods), ...
+      'FX_trans_nd',     nan(1, nPeriods), ...
+      'FX_trans_BOM_nd', nan(1, nPeriods));
 
     createMatFilesSim(dm, k, false, wFolder, sandvikArrays);
 
@@ -220,6 +232,23 @@ parfor k = 1:K
       % r.FX_trans_CC_LY   = dr.FX_trans_CC_LY_quarterly(:)';
       % r.FX_transl_CC_LY  = dr.FX_transl_CC_LY_quarterly(:)';
       % r.FX_cc_LY_total   = dr.FX_cc_LY_total_quarterly(:)';
+
+      % --- No-discount sensitivity ----------------------------------------
+      if runSensitivity
+        dmND = dm;
+        for c_nd = 1:length(dmND.cName)
+          dmND.d{c_nd} = ones(size(dmND.d{c_nd}));
+        end
+        dp_nd = buildPA(dmND, dc);
+        dr_nd = performanceAttribution(dmND, dc, dp_nd, false);
+        for p = 1:nPeriods
+          idx = quarterIdx{p};
+          if ~isempty(idx)
+            r.FX_trans_nd(p)     = sum(dr_nd.dFX_trans(idx));
+            r.FX_trans_BOM_nd(p) = sum(dr_nd.dFX_trans_BOM(idx));
+          end
+        end
+      end
 
       % --- Shared accounting core -----------------------------------------
       bs  = buildBalanceSheet(dm, dc);
@@ -299,6 +328,8 @@ for k = 1:K
       mc.(fn)(k,:) = r.(fn);
     end
   end
+  mc.FX_trans_nd(k,:)     = r.FX_trans_nd;
+  mc.FX_trans_BOM_nd(k,:) = r.FX_trans_BOM_nd;
 end
 
 fprintf('\nMonte Carlo complete. Total time: %.1fs\n', toc(tStart));
@@ -407,7 +438,7 @@ cCCavg = [0.60 0.40 0.12];  % brown  — CC avg
 cCCcls = [0.84 0.19 0.87];  % pink   — CC close
 
 mu       = @(M) mean(M,1)/1e6;
-printRow = @(label, A, B) printErrRow(label, A(:), B(:));
+printRow = @(label, A, B) printErrRow(label, A, B);
 kdeplot  = @(ax, e, lbl, col) plotSilvermanKDE(ax, e, lbl, col);
 
 % --- Extract quarterly matrices [nValid x nPeriods] ----------------------
@@ -632,35 +663,26 @@ printActualTable( ...
   {fBonds_q, fBOM_q, M1_CC_q, CC_avg_q, CC_close_q}, ...
   periodDates, nPeriods);
 
-% --- 3b. Error table ------------------------------------------------------
-fprintf('\nError terms (quarterly obs) | PAM flow modes vs industry CC\n');
+% --- 3b. Error table — PAM bonds (flow) benchmark ------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds (flow)\n');
 fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
 printHeader();
-% --- snap block DISABLED (algebraically = M1 CC TI; redundant) ----------
-% fprintf('  PAM snap vs industry\n');
-% printRow('snap  vs  M1 CC',    fSnap_q, M1_CC_q);
-% printRow('snap  vs  CC avg',   fSnap_q, CC_avg_q);
-% printRow('snap  vs  CC close', fSnap_q, CC_close_q);
-% fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM bonds vs industry\n');
-printRow('bonds vs  M1 CC',    fBonds_q, M1_CC_q);
-printRow('bonds vs  CC avg',   fBonds_q, CC_avg_q);
-printRow('bonds vs  CC close', fBonds_q, CC_close_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM BOM vs industry\n');
-printRow('BOM   vs  M1 CC',    fBOM_q, M1_CC_q);
-printRow('BOM   vs  CC avg',   fBOM_q, CC_avg_q);
-printRow('BOM   vs  CC close', fBOM_q, CC_close_q);
+printRow('PAM bonds      vs  M1 CC',    fBonds_q, M1_CC_q);
+printRow('PAM bonds      vs  CC avg',   fBonds_q, CC_avg_q);
+printRow('PAM bonds      vs  CC close', fBonds_q, CC_close_q);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry CC vs industry CC\n');
-printRow('M1 CC       vs  CC avg',   M1_CC_q,  CC_avg_q);
-printRow('M1 CC       vs  CC close', M1_CC_q,  CC_close_q);
-printRow('CC avg      vs  CC close', CC_avg_q, CC_close_q);
-fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM flow modes vs each other\n');
-% printRow('snap  vs  bonds', fSnap_q,  fBonds_q);   % snap DISABLED
-% printRow('snap  vs  BOM',   fSnap_q,  fBOM_q);     % snap DISABLED
-printRow('bonds vs  BOM',   fBonds_q, fBOM_q);
+printRow('M1 CC          vs  CC avg',   M1_CC_q,  CC_avg_q);
+printRow('M1 CC          vs  CC close', M1_CC_q,  CC_close_q);
+printRow('CC avg         vs  CC close', CC_avg_q, CC_close_q);
+
+% --- 3c. Error table — PAM BOM (flow) benchmark --------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOM (flow)\n');
+fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
+printHeader();
+printRow('PAM BOM        vs  M1 CC',    fBOM_q, M1_CC_q);
+printRow('PAM BOM        vs  CC avg',   fBOM_q, CC_avg_q);
+printRow('PAM BOM        vs  CC close', fBOM_q, CC_close_q);
 
 err_BOM_M1    = (fBOM_q   - M1_CC_q)    / 1e6;
 err_BOM_avg   = (fBOM_q   - CC_avg_q)   / 1e6;
@@ -725,6 +747,84 @@ formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 
 % =========================================================================
+%  SENSITIVITY — No-Discount PAM vs Industry Methods (TI only)
+% =========================================================================
+if runSensitivity
+
+fprintf('\n');
+fprintf('##########################################################################\n');
+fprintf('##  SENSITIVITY: No-Discount PAM (TI)                                 ##\n');
+fprintf('##########################################################################\n');
+fprintf('  Discount factors set to 1 — isolates PV-discounting contribution.\n\n');
+
+% Seeds loaded from old checkpoints have NaN for sensitivity fields — filter separately
+validND  = valid & ~any(isnan(mc.FX_trans_nd), 2);
+nValidND = sum(validND);
+if nValidND == 0
+  fprintf('  No sensitivity data available — rerun with runSensitivity=true.\n');
+else
+
+PAM_TI_nd_q     = mc.FX_trans_nd(validND,:);
+PAM_TI_BOM_nd_q = mc.FX_trans_BOM_nd(validND,:);
+% Use validND subset for all methods so comparisons are on the same seeds
+PAM_TI_nd_base_q     = mc.FX_trans(validND,:);
+PAM_TI_BOM_nd_base_q = mc.FX_trans_BOM(validND,:);
+M1_TI_nd_base_q      = mc.M1_TI(validND,:);
+
+% --- Table: actual values -------------------------------------------------
+fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValidND);
+printActualTable( ...
+  {'PAM bonds','PAM b+BOM','PAM bonds ND','PAM b+BOM ND','M1'}, ...
+  {PAM_TI_nd_base_q, PAM_TI_BOM_nd_base_q, PAM_TI_nd_q, PAM_TI_BOM_nd_q, M1_TI_nd_base_q}, ...
+  periodDates, nPeriods);
+
+% --- Error table: no-discount vs M1 --------------------------------------
+N_obs_nd = nValidND * nPeriods;
+fprintf('\nError terms | No-discount PAM benchmark vs industry\n');
+fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs_nd, nValidND, nPeriods);
+printHeader();
+printRow('PAM bonds ND   vs  M1',      PAM_TI_nd_q,     M1_TI_nd_base_q);
+printRow('PAM b+BOM ND   vs  M1',      PAM_TI_BOM_nd_q, M1_TI_nd_base_q);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  Discount effect (normal - no-discount), same %d seeds\n', nValidND);
+printRow('PAM bonds      vs  bonds ND', PAM_TI_nd_base_q,     PAM_TI_nd_q);
+printRow('PAM b+BOM      vs  b+BOM ND', PAM_TI_BOM_nd_base_q, PAM_TI_BOM_nd_q);
+
+% --- Figure: sensitivity time series (non-cumulative) --------------------
+cND = [0.85 0.33 0.10];   % red-orange — no-discount variants
+fig = figure(30); clf; hold on;
+plot(qx, mu(PAM_TI_nd_base_q),    '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(qx, mu(PAM_TI_BOM_nd_base_q),'--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM');
+plot(qx, mu(PAM_TI_nd_q),         '-o',  'Color',cND, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds (no disc)');
+plot(qx, mu(PAM_TI_BOM_nd_q),     '--s', 'Color',cND, 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM (no disc)');
+plot(qx, mu(M1_TI_nd_base_q),     '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million');
+title('TI — sensitivity: no-discount PAM');
+legend('Location','Best'); grid on;
+formatFig(fig, 16, 8);
+saveas(fig, fullfile(figDir,'sensitivity_TI_actual.pdf'));
+
+% --- Figure: sensitivity cumulative --------------------------------------
+fig = figure(31); clf; hold on;
+plot(qx, cumsum(mu(PAM_TI_nd_base_q)),    '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(qx, cumsum(mu(PAM_TI_BOM_nd_base_q)),'--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM');
+plot(qx, cumsum(mu(PAM_TI_nd_q)),         '-o',  'Color',cND, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds (no disc)');
+plot(qx, cumsum(mu(PAM_TI_BOM_nd_q)),     '--s', 'Color',cND, 'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM (no disc)');
+plot(qx, cumsum(mu(M1_TI_nd_base_q)),     '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
+yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
+set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+ylabel('SEK million');
+title('TI — sensitivity: no-discount PAM (cumulative)');
+legend('Location','Best'); grid on;
+formatFig(fig, 16, 8);
+saveas(fig, fullfile(figDir,'sensitivity_TI_cum.pdf'));
+
+end  % nValidND > 0
+end  % runSensitivity
+
+% =========================================================================
 % LOCAL FUNCTIONS
 % =========================================================================
 function printHeader()
@@ -735,12 +835,18 @@ function printHeader()
 end
 
 function printErrRow(label, A, B)
-  e     = A - B;
-  N     = numel(e);
-  me    = mean(e);
-  s     = std(e);
-  rmse  = sqrt(mean(e.^2));
-  ci_hw = 1.96 * s / sqrt(N);
+% A, B are [K x nPeriods] matrices.
+% ME   = grand mean error (averaged over all K*nPeriods observations).
+% Std  = mean of per-quarter stds (std across K for each quarter, then averaged).
+%        This captures simulation noise only, not time-series variation.
+% CI   = ME +/- 1.96 * Std / sqrt(K)  (uncertainty on the mean for a typical quarter).
+% RMSE = root mean squared error across all K*nPeriods observations.
+  e     = A - B;                        % [K x nPeriods]
+  K     = size(e, 1);
+  me    = mean(e(:));
+  s     = mean(std(e, 0, 1));           % mean of per-quarter stds across K iterations
+  rmse  = sqrt(mean(e(:).^2));
+  ci_hw = 1.96 * s / sqrt(K);
   fprintf('%-34s %12.0f %12.0f   [%12.0f, %12.0f]  %12.0f\n', ...
     label, me, s, me-ci_hw, me+ci_hw, rmse);
 end
@@ -759,10 +865,19 @@ function saveCheckpoint(fname, r) %#ok<INUSD>
 end
 
 function formatFig(fig, w, h)
-% Set figure to exact physical size so the saved PDF has no white border.
+% Set figure to exact physical size and apply consistent typography.
   set(fig, 'Units','centimeters', 'Position',[0 0 w h]);
   set(fig, 'PaperUnits','centimeters', 'PaperSize',[w h], ...
            'PaperPositionMode','auto');
+  ax = gca;
+  ax.FontSize        = 9;   % tick labels
+  ax.Title.FontSize  = 11;
+  ax.Title.FontWeight = 'bold';
+  ax.XLabel.FontSize = 10;
+  ax.YLabel.FontSize = 10;
+  if ~isempty(ax.Legend)
+    ax.Legend.FontSize = 9;
+  end
 end
 
 function printActualTable(methodNames, matrices, periodDates, nPeriods)
