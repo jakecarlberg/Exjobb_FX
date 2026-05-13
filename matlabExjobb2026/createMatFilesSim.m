@@ -20,7 +20,7 @@ function createMatFilesSim(dm, seed, verbose, dataFolder, sandvikArrays, timingO
 %                     Fields present override the baseline Table 4.7 values
 %                     (used by runSensitivity to sweep timing parameters).
 %
-% The function generates a 21-year transaction history (2005-2025) for a
+% The function generates a 20-year transaction history (2006-2025) for a
 % simulated manufacturing subsidiary.  Revenue and gross margin are
 % calibrated year by year to Sandvik's reported figures (Tables 4.3-4.4).
 % Component prices are scaled annually so that total COGS matches the
@@ -100,8 +100,7 @@ inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
 %   TEST MODE    ~20-30 orders/year    (manual verification — few transactions,
 %                                       easy to trace but poor statistical coverage)
 %
-baseSellPriceEUR = [1000000, 5000000, 20000000];        % ACTUAL MODE  (Type A/B/C: 1M/5M/20M EUR)
-% baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
+baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
 % baseSellPriceEUR = [5000000, 25000000, 100000000];    % TEST MODE (×5 prices → ~20 orders/yr)
 
 % --- Product mix probabilities (by unit count) ---------------------------
@@ -109,11 +108,11 @@ productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
 
 % --- Sales currency exposure (Table 4.5; INR dropped due to limited yield data)
 % Weights will auto-normalize to 100% in the generation loop
-saleCurNames   = {'USD','EUR','AUD','CAD','GBP','ZAR','CNY'};
-saleExposurePct = [38,   22,   12,    7,    6,    5,    5  ];
+saleCurNames   = {'USD','EUR','AUD','CAD','ZAR','CNY'};
+saleExposurePct = [39,   31,   12,    8,    6,    4  ];
 
 % --- Cash management -----------------------------------------------------
-cashRetentionFrac = 0.10;  % retain 10% of prior year COGS; sweep rest to parent
+cashRetentionFrac = 0.10;  % retain 10% of prior year COGS & sweep rest to parent
 
 % --- Timing parameters (Table 4.7) --------------------------------------
 procLeadMean = 45;  procLeadStd = 10;   % days: procurement lead time (order → delivery)
@@ -138,7 +137,7 @@ end
 %% ========================================================================
 
 nComponents   = 10;
-compCurStr    = {'USD','EUR','EUR','USD','CNY','EUR','USD','GBP','USD','CNY'};
+compCurStr    = {'USD','EUR','EUR','USD','CNY','EUR','USD','USD','USD','CNY'};
 compPriceInit = [100, 20, 50, 400, 5, 2000, 5000, 8000, 500, 10];
 
 compIcur = zeros(1, nComponents);
@@ -364,7 +363,8 @@ summNOrders     = zeros(1, nYears);
 summDividend    = zeros(1, nYears);
 summCash        = zeros(1, nYears);
 summTypeCounts  = zeros(nYears, nTypes);           % product split per year
-summCurRevenue  = zeros(nYears, length(saleCurNames)); % revenue per currency per year
+summCurRevenue  = zeros(nYears, length(saleCurNames)); % revenue per currency per year (EUR)
+summCurCOGS     = zeros(nYears, length(saleCurNames)); % COGS per currency per year (EUR)
 dividendEvents  = zeros(0, 2);                     % [date, amount_EUR] per sweep
 
 for y = 1:nYears
@@ -408,6 +408,21 @@ for y = 1:nYears
     [~, bestCur] = max(targetRevByCur - cumRevByCur);
     curAssignment(i) = bestCur;
     cumRevByCur(bestCur) = cumRevByCur(bestCur) + orderRevenue(i);
+  end
+
+  % --- Assign purchase currencies to match same exposure as sales ----------
+  % Each order gets one purchase currency; all its AP entries use that currency.
+  % Greedy algorithm by COGS value (same approach as sales by revenue).
+  orderCOGSbase      = arrayfun(@(t) sum(typeQuantities{t} .* compPriceInit(typeComponents{t})), typeAssignment);
+  targetCOGSbyCur    = saleWeightsNorm * sum(orderCOGSbase);
+  cumCOGSbyCur       = zeros(1, length(saleCurNames));
+  purchCurAssignment = zeros(nOrdersY, 1);
+  permIdxP           = randperm(nOrdersY);
+  for kp = 1:nOrdersY
+    ip = permIdxP(kp);
+    [~, bestCur] = max(targetCOGSbyCur - cumCOGSbyCur);
+    purchCurAssignment(ip) = bestCur;
+    cumCOGSbyCur(bestCur)  = cumCOGSbyCur(bestCur) + orderCOGSbase(ip);
   end
 
   % --- Manufacturing start dates: uniform random within year -------------
@@ -519,6 +534,8 @@ for y = 1:nYears
     actCOGSY    = actCOGSY    + cogsEUR;
     summTypeCounts(y, typeIdx) = summTypeCounts(y, typeIdx) + 1;
     summCurRevenue(y, iSaleType) = summCurRevenue(y, iSaleType) + revenueEUR;
+    iPurchType = purchCurAssignment(i);
+    summCurCOGS(y, iPurchType)  = summCurCOGS(y, iPurchType)  + cogsEUR;
 
     % --- Fill sales table ------------------------------------------------
     sa_fxAmt(productId)     = revenueSale;
@@ -546,7 +563,6 @@ for y = 1:nYears
     for j = 1:nComp
       cj     = compIdx(j);
       qBuy   = compQty(j);
-      curStr = compCurStr{cj};
 
       poId     = poId + 1;
       bomRowId = bomRowId + 1;
@@ -572,9 +588,13 @@ for y = 1:nYears
         apDue = apDue + 1;
       end
 
-      % Prices
+      % Prices — convert to order-level purchase currency
+      iPurchIcur      = saleCurIcur(purchCurAssignment(i));
+      purchCurStr     = saleCurNames{purchCurAssignment(i)};
       compPrice       = alpha * compPriceInit(cj);
-      totalAmtProcCur = compPrice * qBuy;
+      fxCjToEUR       = dm.fx{compIcur(cj), iCurFunctional}(iDmMfgStart);
+      fxEURtoPurch    = dm.fx{iCurFunctional, iPurchIcur}(iDmMfgStart);
+      totalAmtProcCur = compPrice * qBuy * fxCjToEUR * fxEURtoPurch;
 
       % BOM row
       % actualFinishDate = procDeliveryDate (= mfgStart): each component BOM
@@ -595,7 +615,7 @@ for y = 1:nYears
       p_poNum(bomRowId)     = poId;
       p_itemNum(bomRowId)   = cj;
       p_txCode(bomRowId)    = 40;
-      p_cur{bomRowId}       = curStr;
+      p_cur{bomRowId}       = purchCurStr;
       p_poNum1(bomRowId)    = poId;
       p_qty(bomRowId)       = qBuy;
       p_orderDate(bomRowId) = procDate;          % PO placed (Component BOM start)
@@ -609,13 +629,13 @@ for y = 1:nYears
 
       ap_invoiceNum(r1ap) = poId;  ap_txCode(r1ap) = 10;
       ap_fxAmt(r1ap)      = totalAmtProcCur;
-      ap_cur{r1ap}        = curStr;
+      ap_cur{r1ap}        = purchCurStr;
       ap_accDate(r1ap)    = procDeliveryDate;
       ap_dueDate(r1ap)    = apDue;
 
       ap_invoiceNum(r2ap) = poId;  ap_txCode(r2ap) = 20;
       ap_fxAmt(r2ap)      = -totalAmtProcCur;
-      ap_cur{r2ap}        = curStr;
+      ap_cur{r2ap}        = purchCurStr;
       ap_accDate(r2ap)    = apDue;
       ap_dueDate(r2ap)    = apDue;
 
@@ -801,8 +821,8 @@ if verbose
   fprintf('Total products: %d  |  Total POs: %d  |  Date range: %s to %s\n', ...
     nProducts, poId, datestr(allDates(1)), datestr(allDates(end)));
 
-  % --- Sales currency exposure table -------------------------------------
-  fprintf('\n=== Sales Currency Exposure (actual %% of revenue in EUR) ===\n');
+  % --- Net currency exposure table (sales - COGS, as % of revenue) -------
+  fprintf('\n=== Net Currency Exposure (sales minus procurement, %% of revenue) ===\n');
   fprintf('%-6s', 'Year');
   for c = 1:length(saleCurNames)
     fprintf(' %6s', saleCurNames{c});
@@ -812,13 +832,15 @@ if verbose
     fprintf('%-6d', simYears(y));
     totRev = summActRevenue(y);
     for c = 1:length(saleCurNames)
-      fprintf(' %5.1f%%', 100 * summCurRevenue(y,c) / totRev);
+      netExp = (summCurRevenue(y,c) - summCurCOGS(y,c)) / totRev;
+      fprintf(' %5.1f%%', 100 * netExp);
     end
     fprintf('\n');
   end
+  avgGM = mean(grossMarginPct);
   fprintf('%-6s', 'Target');
   for c = 1:length(saleCurNames)
-    fprintf(' %5.1f%%', saleExposurePct(c));
+    fprintf(' %5.1f%%', avgGM * saleExposurePct(c) / 100);
   end
   fprintf('\n');
 end

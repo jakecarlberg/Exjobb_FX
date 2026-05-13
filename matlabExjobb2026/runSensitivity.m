@@ -56,7 +56,7 @@ settings.startDate          = datenum(2007,1,1);
 settings.endDate            = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
-settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','SEK','USD','ZAR'};
+settings.currencies         = {'AUD','CAD','CNY','EUR','SEK','USD','ZAR'};
 
 addpath(fullfile('IndustryMethods'));
 addpath(fullfile('IndustryMethods', 'Method1'));

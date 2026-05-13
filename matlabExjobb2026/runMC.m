@@ -31,7 +31,7 @@ settings.endDate            = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
 % Currencies used in simulation (INR excluded — yield curve history too short)
-settings.currencies         = {'AUD','CAD','CNY','EUR','GBP','SEK','USD','ZAR'};
+settings.currencies         = {'AUD','CAD','CNY','EUR','SEK','USD','ZAR'};
 
 marketDataSet = 'reutersZero';
 

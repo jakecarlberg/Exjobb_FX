@@ -1,4 +1,4 @@
-4% runPA  Single-run Performance Attribution for the thesis simulation.
+% runPA  Single-run Performance Attribution for the thesis simulation.
 %
 % Loads market data (once), generates a simulated transaction dataset,
 % runs the full PA pipeline, prints PAM FX benchmarks and FX gains.
