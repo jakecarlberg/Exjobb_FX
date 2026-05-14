@@ -1,4 +1,4 @@
-function fcc = performanceAttributionFlowCC(dm, dc, pnl, window)
+function fcc = performanceAttributionFlowCC(dm, dc, pnl, window, useDiscounting)
 % performanceAttributionFlowCC
 %   Flow-restricted PAM CC, three lifecycle variants in one call.
 %
@@ -44,11 +44,23 @@ function fcc = performanceAttributionFlowCC(dm, dc, pnl, window)
 %   contribution is bucketed into the sub-period containing day t.
 %
 % Inputs:
-%   dm     market data (uses dm.dates, dm.cName, dm.fx)
-%   dc     company data (uses dc.a, dc.ap, dc.sa, dc.p, dc.productNumbers,
-%                              dc.productOrderDate)
-%   pnl    P&L struct (uses pnl.quarterStartIdx, pnl.quarterEndIdx)
-%   window 'month' (default) | 'quarter' | 'week'
+%   dm              market data (uses dm.dates, dm.cName, dm.fx, optionally dm.d)
+%   dc              company data (uses dc.a, dc.ap, dc.sa, dc.p,
+%                                 dc.productNumbers, dc.productOrderDate)
+%   pnl             P&L struct (uses pnl.quarterStartIdx, pnl.quarterEndIdx)
+%   window          'month' (default) | 'quarter' | 'week'
+%   useDiscounting  true (default)  — value flows as discounted ZCB PVs:
+%                                     C × d_{c,t}(T-t) × FX. Each daily F is
+%                                     multiplied by the bond's discount factor
+%                                     before computing daily diffs, so the CC
+%                                     time profile reflects PV growth as the
+%                                     bond pulls to par. Internally consistent
+%                                     with the rest of PAM (ZCB-based).
+%                                     Requires dm.d{c}.
+%                   false           — value flows at face × FX (matches
+%                                     industry CC convention without
+%                                     discounting). Available as a diagnostic
+%                                     to isolate face-vs-PV from other errors.
 %
 % Output struct fields:
 %   fcc.snap.{trans,transl,cross,total}_{monthly,quarterly}
@@ -59,6 +71,7 @@ function fcc = performanceAttributionFlowCC(dm, dc, pnl, window)
 %   fcc.window         string
 
 if nargin < 4 || isempty(window), window = 'month'; end
+if nargin < 5 || isempty(useDiscounting), useDiscounting = true; end
 
 % =========================================================================
 % Setup: dates, currency indices, FX paths
@@ -148,6 +161,7 @@ for k = 1:length(arRows10)
    trans_BOM_m,  transl_BOM_m,  cross_BOM_m] = ...
     addEvent(c, iEUR, +1, C, t_rec, t_pay, t_ord, ...
              dm, f_EUR_SEK, d2s, compIdx, avgFor_EUR, avgEUR_SEK, nSub, M, ...
+             useDiscounting, ...
              trans_snap_m, transl_snap_m, cross_snap_m, ...
              trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
              trans_BOM_m,  transl_BOM_m,  cross_BOM_m);
@@ -173,6 +187,7 @@ for k = 1:length(apRows10)
    trans_BOM_m,  transl_BOM_m,  cross_BOM_m] = ...
     addEvent(c, iEUR, -1, C, t_rec, t_pay, t_ord, ...
              dm, f_EUR_SEK, d2s, compIdx, avgFor_EUR, avgEUR_SEK, nSub, M, ...
+             useDiscounting, ...
              trans_snap_m, transl_snap_m, cross_snap_m, ...
              trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
              trans_BOM_m,  transl_BOM_m,  cross_BOM_m);
@@ -248,6 +263,7 @@ function [trans_snap_m, transl_snap_m, cross_snap_m, ...
           trans_BOM_m,  transl_BOM_m,  cross_BOM_m] = ...
     addEvent(c, iEUR, signFlow, C, t_rec, t_pay, t_ord, ...
              dm, f_EUR_SEK, d2s, compIdx, avgFor_EUR, avgEUR_SEK, nSub, M, ...
+             useDiscounting, ...
              trans_snap_m, transl_snap_m, cross_snap_m, ...
              trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
              trans_BOM_m,  transl_BOM_m,  cross_BOM_m)
@@ -287,17 +303,35 @@ b_path = f_EUR_SEK;
 % Validate window: all rates non-NaN over [t_ord, t_pay]
 if any(isnan(a_path(t_ord:t_pay))) || any(isnan(b_path(t_ord:t_pay))), return; end
 
+% --- Discount curve for this event (foreign currency c) ---
+%   discCurve is the [nDates x nMaturities] discount factor matrix for currency
+%   c, or [] if useDiscounting is false (no PV adjustment, face × FX only).
+if useDiscounting
+  if c == iEUR
+    % EUR-denominated events: use EUR discount curve
+    discCurve = dm.d{iEUR};
+  else
+    discCurve = dm.d{c};
+  end
+  if isempty(discCurve)
+    discCurve = [];  % fall back to no-discount if curve missing for this currency
+  end
+else
+  discCurve = [];
+end
+
 % --- (1) Snap mode: single contribution at t_rec ---
 a_rec = a_path(t_rec);
 b_rec = b_path(t_rec);
 da    = a_rec - a_PY;
 db    = b_rec - b_PY;
-trans_snap_m(s_rec)  = trans_snap_m(s_rec)  + signFlow * C * da   * b_PY;
-transl_snap_m(s_rec) = transl_snap_m(s_rec) + signFlow * C * a_PY * db;
-cross_snap_m(s_rec)  = cross_snap_m(s_rec)  + signFlow * C * da   * db;
+D_rec = discountFactorAt(discCurve, t_rec, t_pay);   % 1 if no discounting
+trans_snap_m(s_rec)  = trans_snap_m(s_rec)  + signFlow * C * D_rec * da   * b_PY;
+transl_snap_m(s_rec) = transl_snap_m(s_rec) + signFlow * C * D_rec * a_PY * db;
+cross_snap_m(s_rec)  = cross_snap_m(s_rec)  + signFlow * C * D_rec * da   * db;
 
 % --- (2) Bonds mode: lifecycle [t_rec, t_pay] ---
-[d_tr, d_trsl, d_cr] = lifecycleDailyContribs(C, signFlow, t_rec, t_pay, a_path, b_path, a_PY, b_PY);
+[d_tr, d_trsl, d_cr] = lifecycleDailyContribs(C, signFlow, t_rec, t_pay, a_path, b_path, a_PY, b_PY, discCurve);
 buckets = d2s(t_rec:t_pay);
 valid   = buckets > 0;
 if any(valid)
@@ -307,7 +341,7 @@ if any(valid)
 end
 
 % --- (3) BOM mode: lifecycle [t_ord, t_pay] (BOM-extended) ---
-[d_tr, d_trsl, d_cr] = lifecycleDailyContribs(C, signFlow, t_ord, t_pay, a_path, b_path, a_PY, b_PY);
+[d_tr, d_trsl, d_cr] = lifecycleDailyContribs(C, signFlow, t_ord, t_pay, a_path, b_path, a_PY, b_PY, discCurve);
 buckets = d2s(t_ord:t_pay);
 valid   = buckets > 0;
 if any(valid)
@@ -321,24 +355,57 @@ end
 
 %% =========================================================================
 function [d_trans, d_transl, d_cross] = lifecycleDailyContribs( ...
-  C, signFlow, t_start, t_end, a_path, b_path, a_PY, b_PY)
+  C, signFlow, t_start, t_end, a_path, b_path, a_PY, b_PY, discCurve)
 % Daily contributions over [t_start, t_end], one row per day.
 % Day 1 (= t_start) gets the "initial" contribution F_*(t_start) - 0;
 % subsequent days get F_*(t) - F_*(t-1).
+%
+% If discCurve is non-empty, each running F is multiplied by the discount
+% factor d_{c,t}(T-t) so the contributions reflect the ZCB present value
+% rather than face × FX. At t = t_end the discount factor is 1 (pull to par),
+% so the cumulative value over the window is unchanged — only the time
+% distribution within the window shifts toward later quarters.
 
 t_window = (t_start:t_end)';
 a = a_path(t_window);
 b = b_path(t_window);
 
-% Running CC values at end of each day
-F_trans  = C * b_PY * (a - a_PY);
-F_transl = C * a_PY * (b - b_PY);
-F_cross  = C * (a - a_PY) .* (b - b_PY);
+% Discount factor at each day (or 1 if no discounting)
+if isempty(discCurve)
+  D = ones(length(t_window), 1);
+else
+  D = zeros(length(t_window), 1);
+  for i = 1:length(t_window)
+    D(i) = discountFactorAt(discCurve, t_window(i), t_end);
+  end
+end
+
+% Running CC values at end of each day (with discount applied)
+F_trans  = C * D .* b_PY .* (a - a_PY);
+F_transl = C * D .* a_PY .* (b - b_PY);
+F_cross  = C * D .* (a - a_PY) .* (b - b_PY);
 
 % Daily contributions: leading element = first-day initial (F(1) - 0)
 d_trans  = signFlow * [F_trans(1);  diff(F_trans)];
 d_transl = signFlow * [F_transl(1); diff(F_transl)];
 d_cross  = signFlow * [F_cross(1);  diff(F_cross)];
+end
+
+
+%% =========================================================================
+function D = discountFactorAt(discCurve, t_idx, t_pay)
+% Discount factor at date t_idx for time-to-maturity (t_pay - t_idx + 1) days.
+% Returns 1 if discCurve is empty (no PV adjustment).
+if isempty(discCurve)
+  D = 1;
+  return;
+end
+ttm = max(1, t_pay - t_idx + 1);
+ttm = min(ttm, size(discCurve, 2));
+D = discCurve(t_idx, ttm);
+if isnan(D) || D <= 0
+  D = 1;   % fall back if curve has gaps
+end
 end
 
 

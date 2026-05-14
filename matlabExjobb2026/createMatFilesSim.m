@@ -344,6 +344,10 @@ ap_dueDate    = zeros(2*nTotalPO, 1);  ap_accDate = zeros(2*nTotalPO, 1);
 % Costing table
 cCostingData = [];
 
+% productOrderDate(i) — customer-commitment date for product i's AR event.
+% Under the make-to-order assumption, this equals the earliest procurement
+% PO date across the product's BOM components, since the subsidiary places
+% procurement immediately upon receiving the customer order.
 productOrderDate = zeros(nBOM_total, 1);
 
 %% ========================================================================

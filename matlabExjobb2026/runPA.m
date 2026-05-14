@@ -57,7 +57,8 @@ m2 = computeMethod2(dm, dc, '', bs, pnl);
 % three-way (trans / transl / cross) decomposition applied per recognition
 % event. Used below as an apples-to-apples benchmark that isolates the
 % stock-vs-flow base axis from all other PAM-vs-industry differences.
-fcc = performanceAttributionFlowCC(dm, dc, pnl, 'month');
+fcc        = performanceAttributionFlowCC(dm, dc, pnl, 'month');         % ZCB PV × FX (default)
+fcc_noDisc = performanceAttributionFlowCC(dm, dc, pnl, 'month', false);  % face × FX (diagnostic only)
 
 fprintf('\n=== Method 1 & 2 (monthly): FX Impacts per Quarter (SEK) ===\n');
 fprintf('%-12s %14s %14s %14s %14s\n', 'Period end', 'M1 TI', 'M1 OCI', 'M2 TI', 'M2 OCI');
@@ -145,6 +146,78 @@ fprintf('%-22s %16s %16s %16s %16s\n', 'BOM    (order->pay)', ...
 fprintf('%s\n', repmat('-', 1, 90));
 fprintf('  Identity check: |bonds.total - BOM.total| = %s SEK (must be ~0)\n', ...
   fmtNum(abs(sum(fcc.bonds.total_quarterly) - sum(fcc.BOM.total_quarterly))));
+
+% -------------------------------------------------------------------------
+% Discount sensitivity: face × FX vs ZCB PV × FX
+%   Diagnostic only — the canonical PAM CC uses discounting (ZCB PV × FX).
+%   Cumulative totals should be ~identical (D = 1 at maturity); only the
+%   per-quarter time profile differs as the bond pulls to par.
+% -------------------------------------------------------------------------
+fprintf('\n=== Flow CC discounting diagnostic: face×FX vs ZCB PV×FX (cumulative SEK) ===\n');
+fprintf('%-22s %18s %18s %12s\n', 'Variant', 'face×FX (legacy)', 'ZCB PV×FX (default)', 'rel diff (%)');
+fprintf('%s\n', repmat('-', 1, 74));
+for fld = {'snap','bonds','BOM'}
+  m = fld{1};
+  v0 = sum(fcc_noDisc.(m).total_quarterly);
+  v1 = sum(fcc.(m).total_quarterly);
+  if abs(v0) > 1
+    relDiff = 100 * (v1 - v0) / v0;
+  else
+    relDiff = NaN;
+  end
+  fprintf('%-22s %18s %18s %12.4f\n', sprintf('%s total', m), ...
+    fmtNum(v0), fmtNum(v1), relDiff);
+end
+fprintf('%s\n', repmat('-', 1, 74));
+fprintf('  Per-quarter L1 difference (sum of |Δq| in SEK):\n');
+for fld = {'snap','bonds','BOM'}
+  m = fld{1};
+  l1 = sum(abs(fcc_noDisc.(m).total_quarterly - fcc.(m).total_quarterly));
+  fprintf('    %-22s %s SEK\n', sprintf('%s total', m), fmtNum(l1));
+end
+
+% =========================================================================
+% Figure 19 — M1 vs PAM flow CC variants, with/without ZCB discounting
+%   3 subplots: M1 vs snap | M1 vs bonds | M1 vs BOM
+%   Each subplot:
+%     - Top panel: cumulative SEK (full picture)
+%     - Bottom panel: per-quarter SEK (where discounting actually shows up)
+% =========================================================================
+qDates_cc = m1.cc.periodEndDates;
+M1_CC_total_q = m1.cc.M1.quarterly_TI + m1.cc.M1.quarterly_OCI;
+
+modeNames = {'snap', 'bonds', 'BOM'};
+modeColors = {[0.12 0.47 0.71], [0.89 0.10 0.11], [0.20 0.63 0.17]};   % blue, red, green
+
+figure(19); clf;
+for mi = 1:3
+  m = modeNames{mi};
+  col = modeColors{mi};
+  yNoDisc = fcc_noDisc.(m).total_quarterly / 1e6;   % face × FX (legacy)
+  yDisc   = fcc.(m).total_quarterly        / 1e6;   % ZCB PV × FX (default)
+  yM1     = M1_CC_total_q                  / 1e6;
+
+  % Cumulative subplot (top row)
+  subplot(2, 3, mi); hold on;
+  plot(qDates_cc, cumsum(yM1),     'k-',  'LineWidth', 1.8, 'DisplayName', 'M1 CC (TI + OCI)');
+  plot(qDates_cc, cumsum(yNoDisc), '-',   'Color', col, 'LineWidth', 1.5, 'DisplayName', sprintf('PAM %s (face×FX)', m));
+  plot(qDates_cc, cumsum(yDisc),   '--',  'Color', col, 'LineWidth', 1.5, 'DisplayName', sprintf('PAM %s (ZCB PV)', m));
+  datetick('x', 'yyyy', 'keepticks'); grid on;
+  ylabel('SEK (millions)'); title(sprintf('M1 vs PAM %s — cumulative', m));
+  legend('Location', 'best');
+
+  % Per-quarter subplot (bottom row)
+  subplot(2, 3, mi + 3); hold on;
+  plot(qDates_cc, yM1,     'k-',  'LineWidth', 1.8, 'DisplayName', 'M1 CC (TI + OCI)');
+  plot(qDates_cc, yNoDisc, '-',   'Color', col, 'LineWidth', 1.5, 'DisplayName', sprintf('PAM %s (face×FX)', m));
+  plot(qDates_cc, yDisc,   '--',  'Color', col, 'LineWidth', 1.5, 'DisplayName', sprintf('PAM %s (ZCB PV)', m));
+  yline(0, ':k', 'HandleVisibility', 'off');
+  datetick('x', 'yyyy', 'keepticks'); grid on;
+  xlabel('Quarter end'); ylabel('SEK (millions)');
+  title(sprintf('M1 vs PAM %s — per quarter', m));
+  legend('Location', 'best');
+end
+sgtitle('M1 CC vs PAM flow-CC variants, with/without ZCB discounting');
 
 % =========================================================================
 % 2x2 COMPARISON PLOT — PAM vs Method 1 vs Method 2 (monthly)
