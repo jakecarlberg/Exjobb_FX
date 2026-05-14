@@ -433,10 +433,12 @@ for y = 1:nYears
   % bufferStart: year 1 — procurement must not predate dm.dates(1)
   % procBuf: all years — keep procurement within same calendar year to avoid
   %   component inventory spikes at year boundaries (procLead can be up to 75 days)
-  % bufferEnd: last year — customer payment must not exceed dm.dates(end)
-  bufferStart = procLeadMean + 3*procLeadStd + mfgMean + 3*mfgStd + 10;
+  % bufferEnd: last year — customer payment must not exceed dm.dates(end).
+  %   Must accommodate the full post-mfgStart lifecycle: mfgLag (max 3) +
+  %   mfgDays (3-sigma) + invoiceLag (max 3) + custPay (3-sigma) + slack.
+  bufferStart = procLeadMean + 3*procLeadStd + 3 + mfgMean + 3*mfgStd + 10;   % +3 for mfgLag
   procBuf     = procLeadMean + 3*procLeadStd;
-  bufferEnd   = custPayMean  + 3*custPayStd  + 10;
+  bufferEnd   = 3 + mfgMean + 3*mfgStd + 3 + custPayMean + 3*custPayStd + 10; % +3 mfgLag, +3 invoiceLag
 
   iYearStart = yearStartIdx(y);
   iYearEnd   = yearEndIdx(y);
@@ -526,6 +528,15 @@ for y = 1:nYears
     custPay     = max(7, round(custPayMean + custPayStd * randn()));
     invoiceLag  = randi([0, 3]);   % shipping / invoice-prep lag, 0-3 days
     invoiceDate = mfgFinish + invoiceLag;
+    % Snap invoiceDate to next trading day (weekend + holiday safe)
+    invWd = weekday(invoiceDate);
+    if invWd == 7, invoiceDate = invoiceDate + 2; end  % Sat -> Mon
+    if invWd == 1, invoiceDate = invoiceDate + 1; end  % Sun -> Mon
+    while invoiceDate <= dm.dates(end)
+      idx = invoiceDate - dm.dates(1) + 1;
+      if idx >= 1 && idx <= length(dm.indAllDates) && dm.indAllDates(idx) > 0, break; end
+      invoiceDate = invoiceDate + 1;
+    end
     arDueDate   = invoiceDate + custPay;
     arWd = weekday(arDueDate);
     if arWd == 7, arDueDate = arDueDate + 2; end  % Sat -> Mon
