@@ -101,7 +101,7 @@ inflationPct = 2.5 * ones(1, 21);  % 2.5% flat assumption (approximate 20-year a
 %                                       easy to trace but poor statistical coverage)
 %
 baseSellPriceEUR = [1000000, 5000000, 20000000];      % NORMAL MODE
-% baseSellPriceEUR = [5000000, 25000000, 100000000];    % TEST MODE (×5 prices → ~20 orders/yr)
+ %baseSellPriceEUR = [5000000, 25000000, 100000000];    % TEST MODE (×5 prices → ~20 orders/yr)
 
 % --- Product mix probabilities (by unit count) ---------------------------
 productMixWeights = [0.60, 0.25, 0.15];  % Type A, B, C
@@ -527,7 +527,7 @@ for y = 1:nYears
 
     % Customer payment timing
     custPay     = max(7, round(custPayMean + custPayStd * randn()));
-    invoiceLag  = randi([0, 3]);   % shipping / invoice-prep lag, 0-3 days
+    invoiceLag  = 0;               % no buffer — invoice sent same day mfg completes
     invoiceDate = mfgFinish + invoiceLag;
     % Snap invoiceDate to next trading day (weekend + holiday safe)
     invWd = weekday(invoiceDate);

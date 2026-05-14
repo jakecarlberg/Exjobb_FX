@@ -16,7 +16,7 @@ clear settings;
 settings.dataFolder    = 'simulatedData';
 settings.bomPricing    = 'DeterministicCashFlows';
 settings.curFunctional = 'EUR';
-settings.startDate     = datenum(2007,1,1);
+settings.startDate     = datenum(2006,1,1);  % 1 year before sim start so 2007 CC has 2006 comparison rates
 settings.endDate       = datenum(2025,12,31);
 settings.usedItemNumbersOrg = [];
 settings.usedProductNumbers = [];
@@ -146,6 +146,45 @@ fprintf('%-22s %16s %16s %16s %16s\n', 'BOM    (order->pay)', ...
 fprintf('%s\n', repmat('-', 1, 90));
 fprintf('  Identity check: |bonds.total - BOM.total| = %s SEK (must be ~0)\n', ...
   fmtNum(abs(sum(fcc.bonds.total_quarterly) - sum(fcc.BOM.total_quarterly))));
+
+% -------------------------------------------------------------------------
+% Per-quarter CC comparison: M1 / M2 avg / M2 close / PAM bonds / PAM BOM
+%   Industry methods are reported as TI + OCI (industry-convention total CC).
+%   PAM-flow modes are reported as the trans + transl + cross total.
+% -------------------------------------------------------------------------
+qD_cc    = m1.cc.periodEndDates;
+M1_cc_q  = m1.cc.M1.quarterly_TI    + m1.cc.M1.quarterly_OCI;
+Mav_cc_q = m1.cc.avg.quarterly_TI   + m1.cc.avg.quarterly_OCI;
+Mcl_cc_q = m1.cc.close.quarterly_TI + m1.cc.close.quarterly_OCI;
+
+% Align PAM-flow quarterly series to the industry CC quarter grid
+nQ_cc        = length(qD_cc);
+PAMb_cc_q    = zeros(nQ_cc, 1);
+PAMBOM_cc_q  = zeros(nQ_cc, 1);
+for q = 1:nQ_cc
+  [~, mp] = min(abs(fcc.periodEndDates - qD_cc(q)));
+  if abs(fcc.periodEndDates(mp) - qD_cc(q)) <= 5
+    PAMb_cc_q(q)   = fcc.bonds.total_quarterly(mp);
+    PAMBOM_cc_q(q) = fcc.BOM.total_quarterly(mp);
+  end
+end
+
+fprintf('\n=== Per-quarter CC comparison (SEK) ===\n');
+fprintf('%-12s %14s %14s %14s %14s %14s\n', ...
+  'Quarter end', 'M1 CC', 'M2 avg CC', 'M2 close CC', 'PAM bonds', 'PAM BOM');
+fprintf('%s\n', repmat('-', 1, 86));
+for q = 1:nQ_cc
+  vals = [M1_cc_q(q), Mav_cc_q(q), Mcl_cc_q(q), PAMb_cc_q(q), PAMBOM_cc_q(q)];
+  if all(vals == 0), continue; end   % skip empty quarters (year 1 cold start)
+  fprintf('%-12s %14s %14s %14s %14s %14s\n', ...
+    datestr(qD_cc(q), 'yyyy-mm-dd'), ...
+    fmtNum(M1_cc_q(q)),  fmtNum(Mav_cc_q(q)),  fmtNum(Mcl_cc_q(q)), ...
+    fmtNum(PAMb_cc_q(q)), fmtNum(PAMBOM_cc_q(q)));
+end
+fprintf('%s\n', repmat('-', 1, 86));
+fprintf('%-12s %14s %14s %14s %14s %14s\n', 'TOTAL', ...
+  fmtNum(sum(M1_cc_q)),  fmtNum(sum(Mav_cc_q)),  fmtNum(sum(Mcl_cc_q)), ...
+  fmtNum(sum(PAMb_cc_q)), fmtNum(sum(PAMBOM_cc_q)));
 
 % -------------------------------------------------------------------------
 % Discount sensitivity: face × FX vs ZCB PV × FX
