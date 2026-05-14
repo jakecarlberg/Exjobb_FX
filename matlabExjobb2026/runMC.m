@@ -405,6 +405,13 @@ fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
 % SIMULATION VALIDATION — Revenue, Gross Margin, Currency Exposure
 % =========================================================================
 
+% Folder for PDF output
+figDir = fullfile(pwd, 'figures');
+if ~exist(figDir, 'dir')
+  [ok, msg] = mkdir(figDir);
+  if ~ok, error('Could not create figures folder: %s', msg); end
+end
+
 % Plot colors (used throughout all figures)
 cPAM   = [0.12 0.47 0.71];  % blue   — PAM bonds
 cM1    = [0.89 0.10 0.11];  % red    — Method 1
@@ -494,12 +501,6 @@ end
 %               (3-6) four separate figures, saved as PDF
 % =========================================================================
 
-% Folder for PDF output (absolute path to avoid working-directory ambiguity)
-figDir = fullfile(pwd, 'figures');
-if ~exist(figDir, 'dir')
-  [ok, msg] = mkdir(figDir);
-  if ~ok, error('Could not create figures folder: %s', msg); end
-end
 
 qx = 1:nPeriods;
 
