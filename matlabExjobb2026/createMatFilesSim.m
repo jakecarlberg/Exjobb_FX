@@ -116,7 +116,7 @@ cashRetentionFrac = 0.10;  % retain 10% of prior year COGS & sweep rest to paren
 
 % --- Timing parameters (Table 4.7) --------------------------------------
 procLeadMean = 45;  procLeadStd = 10;   % days: procurement lead time (order → delivery)
-mfgMean      = 20;  mfgStd      =  5;   % days: manufacturing duration
+mfgMean      = 30;  mfgStd      =  5;   % days: manufacturing duration
 custPayMean  = 45;  custPayStd  = 15;   % days: customer payment delay
 suppPayMean  = 60;  suppPayStd  = 15;   % days: supplier payment delay
 
@@ -491,11 +491,13 @@ for y = 1:nYears
     nComp     = length(compIdx);
 
     % Manufacturing timing
-    mfgDays   = max(1, round(mfgMean + mfgStd * randn()));
-    iMfgStart = bomStartInds(i);
-    iMfgEnd   = min(nDates, iMfgStart + mfgDays);
-    mfgStart  = allDates(iMfgStart);
-    mfgFinish = allDates(iMfgEnd);
+    mfgDays     = max(1, round(mfgMean + mfgStd * randn()));
+    mfgLag      = randi([0, 3]);                            % 0-3 day lag between component arrival and mfg start
+    iCompArrive = bomStartInds(i);                          % date components arrive
+    iMfgStart   = min(nDates, iCompArrive + mfgLag);        % mfg begins mfgLag days after components arrive
+    iMfgEnd     = min(nDates, iMfgStart + mfgDays);
+    mfgStart    = allDates(iMfgStart);
+    mfgFinish   = allDates(iMfgEnd);
     productOrderDate(productId) = Inf;  % will be set to min(procDate) across components below
 
     iDmMfgStart = getdmInd(mfgStart);
@@ -522,7 +524,8 @@ for y = 1:nYears
 
     % Customer payment timing
     custPay     = max(7, round(custPayMean + custPayStd * randn()));
-    invoiceDate = mfgFinish + 7;
+    invoiceLag  = randi([0, 3]);   % shipping / invoice-prep lag, 0-3 days
+    invoiceDate = mfgFinish + invoiceLag;
     arDueDate   = invoiceDate + custPay;
     arWd = weekday(arDueDate);
     if arWd == 7, arDueDate = arDueDate + 2; end  % Sat -> Mon
@@ -573,9 +576,9 @@ for y = 1:nYears
 
       % Procurement timing
       procLead         = max(5, round(procLeadMean + procLeadStd * randn()));
-      iProcDate        = max(2, iMfgStart - procLead);  % never at allDates(1)=firstDate → avoids component h0
-      procDate         = allDates(iProcDate);            % order date (PO placed)
-      procDeliveryDate = mfgStart;                       % delivery date (= mfgStart for now; decouple when safety stock introduced)
+      iProcDate        = max(2, iCompArrive - procLead);  % PO placed procLead days before components arrive
+      procDate         = allDates(iProcDate);              % order date (PO placed)
+      procDeliveryDate = allDates(iCompArrive);            % components arrive (decoupled from mfgStart by mfgLag)
 
       % Track earliest component order date for BOM start
       productOrderDate(productId) = min(productOrderDate(productId), procDate);

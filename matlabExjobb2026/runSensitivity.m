@@ -31,7 +31,7 @@ if ~exist('K', 'var'), K = 10; end
 % BASELINE TIMING  (must mirror createMatFilesSim defaults)
 % =========================================================================
 baseline.procLeadMean = 45;  baseline.procLeadStd = 10;
-baseline.mfgMean      = 20;  baseline.mfgStd      =  5;
+baseline.mfgMean      = 30;  baseline.mfgStd      =  5;
 baseline.custPayMean  = 45;  baseline.custPayStd  = 15;
 baseline.suppPayMean  = 60;  baseline.suppPayStd  = 15;
 
