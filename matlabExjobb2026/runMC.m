@@ -405,6 +405,15 @@ fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
 % SIMULATION VALIDATION — Revenue, Gross Margin, Currency Exposure
 % =========================================================================
 
+% Plot colors (used throughout all figures)
+cPAM   = [0.12 0.47 0.71];  % blue   — PAM bonds
+cM1    = [0.89 0.10 0.11];  % red    — Method 1
+cM2w   = [0.99 0.55 0.24];  % orange — M2 weekly
+cM2m   = [0.20 0.63 0.17];  % green  — M2 monthly
+cM2q   = [0.55 0.34 0.72];  % purple — M2 quarterly
+cCCavg = [0.60 0.40 0.12];  % brown  — CC average
+cCCcls = [0.84 0.19 0.87];  % pink   — CC close
+
 valValid = ~any(isnan(mc.actRevEUR), 2);
 nValValid = sum(valValid);
 
@@ -506,15 +515,6 @@ for ii = 1:length(newYearIdx)
     xTickLbls{newYearIdx(ii)} = sprintf('%02d', mod(yr, 100));
   end
 end
-
-% Consistent color scheme — same method = same color in every figure
-cPAM   = [0.12 0.47 0.71];  % blue   — PAM bonds
-cM1    = [0.89 0.10 0.11];  % red    — Method 1
-cM2w   = [0.99 0.55 0.24];  % orange — M2 weekly
-cM2m   = [0.20 0.63 0.17];  % green  — M2 monthly
-cM2q   = [0.55 0.34 0.72];  % purple — M2 quarterly
-cCCavg = [0.60 0.40 0.12];  % brown  — CC avg
-cCCcls = [0.84 0.19 0.87];  % pink   — CC close
 
 mu       = @(M) mean(M,1)/1e6;
 printRow = @(label, A, B) printErrRow(label, A, B);
