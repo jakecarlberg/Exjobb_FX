@@ -418,8 +418,8 @@ cM1    = [0.89 0.10 0.11];  % red    — Method 1
 cM2w   = [0.99 0.55 0.24];  % orange — M2 weekly
 cM2m   = [0.20 0.63 0.17];  % green  — M2 monthly
 cM2q   = [0.55 0.34 0.72];  % purple — M2 quarterly
-cCCavg = [0.60 0.40 0.12];  % brown  — CC average
-cCCcls = [0.84 0.19 0.87];  % pink   — CC close
+cCCavg = [0.09 0.62 0.75];  % teal   — CC average
+cCCcls = [0.55 0.34 0.72];  % purple — CC close
 
 valValid = ~any(isnan(mc.actRevEUR), 2);
 nValValid = sum(valValid);
@@ -730,69 +730,100 @@ saveas(fig, fullfile(figDir,'OCI_errors_kde.pdf'));
 
 % =========================================================================
 %  SECTION 3 — CONSTANT CURRENCY (CC)
+%  CC requires prior-year average FX rates; CNY data begins Jan 2007 so
+%  2007 quarters have no valid comparison rates. All CC output starts 2008.
 % =========================================================================
 fprintf('\n');
 fprintf('##########################################################################\n');
 fprintf('##  SECTION 3: CONSTANT CURRENCY (CC)                                 ##\n');
 fprintf('##########################################################################\n');
 
+% Restrict CC to 2008+ (2007 CC = 0 because CNY yield curve data begins Jan 2007)
+ccMask  = (qYears >= 2008);
+ccNP    = sum(ccMask);
+ccPD    = [0; periodDates(find(ccMask)+1)];  % end-boundaries for printActualTable
+
+% X-axis labels for CC figures (2008+)
+ccYears = qYears(ccMask);
+ccIsNewYear  = [true; diff(ccYears) ~= 0];
+ccXTickLbls  = repmat({''}, 1, ccNP);
+ccNewYearIdx = find(ccIsNewYear);
+for ii = 1:length(ccNewYearIdx)
+  yr = ccYears(ccNewYearIdx(ii));
+  if yr == ccYears(1) || yr == ccYears(end)
+    ccXTickLbls{ccNewYearIdx(ii)} = num2str(yr);
+  else
+    ccXTickLbls{ccNewYearIdx(ii)} = sprintf('%02d', mod(yr, 100));
+  end
+end
+ccQx = 1:ccNP;
+
+% Filtered CC matrices [nValid x ccNP]
+fBonds_cc   = fBonds_q(:, ccMask);
+fBOM_cc     = fBOM_q(:, ccMask);
+M1_CC_cc    = M1_CC_q(:, ccMask);
+CC_avg_cc   = CC_avg_q(:, ccMask);
+CC_close_cc = CC_close_q(:, ccMask);
+N_obs_cc    = nValid * ccNP;
+
 % --- 3a. Actual values table ----------------------------------------------
 fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
+fprintf('(2008 onwards; 2007 excluded — no prior-year CNY rates available)\n');
 printActualTable( ...
   {'PAM bonds','PAM BOM','M1 CC','CC avg','CC close'}, ...
-  {fBonds_q, fBOM_q, M1_CC_q, CC_avg_q, CC_close_q}, ...
-  periodDates, nPeriods);
+  {fBonds_cc, fBOM_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
+  ccPD, ccNP);
 
 % --- 3b. Error table — PAM bonds (flow) benchmark ------------------------
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds (flow)\n');
-fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
+fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM bonds      vs  M1 CC',    fBonds_q, M1_CC_q);
-printRow('PAM bonds      vs  CC avg',   fBonds_q, CC_avg_q);
-printRow('PAM bonds      vs  CC close', fBonds_q, CC_close_q);
+printRow('PAM bonds      vs  M1 CC',    fBonds_cc, M1_CC_cc);
+printRow('PAM bonds      vs  CC avg',   fBonds_cc, CC_avg_cc);
+printRow('PAM bonds      vs  CC close', fBonds_cc, CC_close_cc);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry CC vs industry CC\n');
-printRow('M1 CC          vs  CC avg',   M1_CC_q,  CC_avg_q);
-printRow('M1 CC          vs  CC close', M1_CC_q,  CC_close_q);
-printRow('CC avg         vs  CC close', CC_avg_q, CC_close_q);
+printRow('M1 CC          vs  CC avg',   M1_CC_cc,  CC_avg_cc);
+printRow('M1 CC          vs  CC close', M1_CC_cc,  CC_close_cc);
+printRow('CC avg         vs  CC close', CC_avg_cc, CC_close_cc);
 
 % --- 3c. Error table — PAM BOM (flow) benchmark --------------------------
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOM (flow)\n');
-fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
+fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM BOM        vs  M1 CC',    fBOM_q, M1_CC_q);
-printRow('PAM BOM        vs  CC avg',   fBOM_q, CC_avg_q);
-printRow('PAM BOM        vs  CC close', fBOM_q, CC_close_q);
+printRow('PAM BOM        vs  M1 CC',    fBOM_cc, M1_CC_cc);
+printRow('PAM BOM        vs  CC avg',   fBOM_cc, CC_avg_cc);
+printRow('PAM BOM        vs  CC close', fBOM_cc, CC_close_cc);
 
-err_BOM_M1    = (fBOM_q   - M1_CC_q)    / 1e6;
-err_BOM_avg   = (fBOM_q   - CC_avg_q)   / 1e6;
-err_BOM_close = (fBOM_q   - CC_close_q) / 1e6;
-err_bonds_M1  = (fBonds_q - M1_CC_q)    / 1e6;
-err_bonds_avg = (fBonds_q - CC_avg_q)   / 1e6;
-err_bonds_close = (fBonds_q - CC_close_q) / 1e6;
+err_BOM_M1    = (fBOM_cc   - M1_CC_cc)    / 1e6;
+err_BOM_avg   = (fBOM_cc   - CC_avg_cc)   / 1e6;
+err_BOM_close = (fBOM_cc   - CC_close_cc) / 1e6;
+err_bonds_M1  = (fBonds_cc - M1_CC_cc)    / 1e6;
+err_bonds_avg = (fBonds_cc - CC_avg_cc)   / 1e6;
+err_bonds_close = (fBonds_cc - CC_close_cc) / 1e6;
 
-% --- Figure 19: CC mean per quarter ---------------------------------------
+% --- Figure 19: CC mean per quarter (2008+) --------------------------------
 fig = figure(19); clf; hold on;
-plot(qx, mu(fBOM_q),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
-plot(qx, mu(fBonds_q),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(qx, mu(M1_CC_q),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
-plot(qx, mu(CC_avg_q),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
-plot(qx, mu(CC_close_q), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+plot(ccQx, mu(fBOM_cc),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
+plot(ccQx, mu(fBonds_cc),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(ccQx, mu(M1_CC_cc),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
+plot(ccQx, mu(CC_avg_cc),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
+plot(ccQx, mu(CC_close_cc), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
-set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('CC — mean per quarter'); legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_actual.pdf'));
 
-% --- Figure 20: CC cumulative ---------------------------------------------
+% --- Figure 20: CC cumulative (2008+) -------------------------------------
 fig = figure(20); clf; hold on;
-plot(qx, cumsum(mu(fBOM_q)),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
-plot(qx, cumsum(mu(fBonds_q)),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(qx, cumsum(mu(M1_CC_q)),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
-plot(qx, cumsum(mu(CC_avg_q)),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
-plot(qx, cumsum(mu(CC_close_q)), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+plot(ccQx, cumsum(mu(fBOM_cc)),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
+plot(ccQx, cumsum(mu(fBonds_cc)),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
+plot(ccQx, cumsum(mu(M1_CC_cc)),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
+plot(ccQx, cumsum(mu(CC_avg_cc)),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
+plot(ccQx, cumsum(mu(CC_close_cc)), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
-set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
+set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('CC — cumulative'); legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_actual_cum.pdf'));
@@ -839,7 +870,7 @@ stdHist(gca, err_TI_M2w, 'PAM bonds vs M2 weekly',   cM2w);
 stdHist(gca, err_TI_M2m, 'PAM bonds vs M2 monthly',  cM2m);
 stdHist(gca, err_TI_M2q, 'PAM bonds vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('TI — per-quarter std distribution (PAM bonds benchmark)');
+legend('Location','Best'); grid on; title('TI — quarterly std (PAM bonds)');
 formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bonds.pdf'));
 
@@ -850,7 +881,7 @@ stdHist(gca, err_BOM_TI_M2w, 'PAM bonds+BOM vs M2 weekly',   cM2w);
 stdHist(gca, err_BOM_TI_M2m, 'PAM bonds+BOM vs M2 monthly',  cM2m);
 stdHist(gca, err_BOM_TI_M2q, 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('TI — per-quarter std distribution (PAM bonds+BOM benchmark)');
+legend('Location','Best'); grid on; title('TI — quarterly std (PAM bonds+BOM)');
 formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bom.pdf'));
 
@@ -861,7 +892,7 @@ stdHist(gca, err_OCI_M2w, 'PAM vs M2 weekly',   cM2w);
 stdHist(gca, err_OCI_M2m, 'PAM vs M2 monthly',  cM2m);
 stdHist(gca, err_OCI_M2q, 'PAM vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('OCI — per-quarter std distribution');
+legend('Location','Best'); grid on; title('OCI — quarterly std');
 formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'OCI_std_hist.pdf'));
 
@@ -871,7 +902,7 @@ stdHist(gca, err_BOM_M1,    'PAM BOM vs M1 CC',    cM1);
 stdHist(gca, err_BOM_avg,   'PAM BOM vs CC avg',   cCCavg);
 stdHist(gca, err_BOM_close, 'PAM BOM vs CC close', cCCcls);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('CC — per-quarter std distribution (PAM BOM benchmark)');
+legend('Location','Best'); grid on; title('CC — quarterly std (PAM BOM)');
 formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bom.pdf'));
 
@@ -881,7 +912,7 @@ stdHist(gca, err_bonds_M1,    'PAM bonds vs M1 CC',    cM1);
 stdHist(gca, err_bonds_avg,   'PAM bonds vs CC avg',   cCCavg);
 stdHist(gca, err_bonds_close, 'PAM bonds vs CC close', cCCcls);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('CC — per-quarter std distribution (PAM bonds benchmark)');
+legend('Location','Best'); grid on; title('CC — quarterly std (PAM bonds)');
 formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bonds.pdf'));
 
@@ -932,24 +963,28 @@ end
 
 function stdHist(ax, e, lbl, col)
 % Plot histogram of per-quarter std (std across K for each quarter).
+% Stairs style (no fill) avoids blended colors when series overlap.
   s = std(e, 0, 1);
-  histogram(ax, s, 10, 'FaceColor', col, 'FaceAlpha', 0.4, 'EdgeColor', col, ...
-    'DisplayName', lbl);
+  histogram(ax, s, 10, 'DisplayStyle','stairs', 'EdgeColor', col, ...
+    'LineWidth', 2, 'DisplayName', lbl);
 end
 
 function formatFig(fig, w, h)
-% Set figure to exact physical size and apply consistent typography.
+% Set figure to exact physical size and apply consistent typography to all axes.
   set(fig, 'Units','centimeters', 'Position',[0 0 w h]);
   set(fig, 'PaperUnits','centimeters', 'PaperSize',[w h], ...
            'PaperPosition',[0 0 w h], 'PaperPositionMode','manual');
-  ax = gca;
-  ax.FontSize        = 9;   % tick labels
-  ax.Title.FontSize  = 11;
-  ax.Title.FontWeight = 'bold';
-  ax.XLabel.FontSize = 10;
-  ax.YLabel.FontSize = 10;
-  if ~isempty(ax.Legend)
-    ax.Legend.FontSize = 9;
+  allAx = findobj(fig, 'Type', 'axes');
+  for i = 1:length(allAx)
+    ax = allAx(i);
+    ax.FontSize         = 9;
+    ax.Title.FontSize   = 11;
+    ax.Title.FontWeight = 'bold';
+    ax.XLabel.FontSize  = 10;
+    ax.YLabel.FontSize  = 10;
+    if ~isempty(ax.Legend)
+      ax.Legend.FontSize = 9;
+    end
   end
 end
 
