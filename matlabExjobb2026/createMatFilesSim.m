@@ -434,11 +434,11 @@ for y = 1:nYears
   % procBuf: all years — keep procurement within same calendar year to avoid
   %   component inventory spikes at year boundaries (procLead can be up to 75 days)
   % bufferEnd: last year — customer payment must not exceed dm.dates(end).
-  %   Must accommodate the full post-mfgStart lifecycle: mfgLag (max 3) +
+  %   Must accommodate the full post-mfgStart lifecycle:
   %   mfgDays (3-sigma) + invoiceLag (max 3) + custPay (3-sigma) + slack.
-  bufferStart = procLeadMean + 3*procLeadStd + 3 + mfgMean + 3*mfgStd + 10;   % +3 for mfgLag
+  bufferStart = procLeadMean + 3*procLeadStd + mfgMean + 3*mfgStd + 10;
   procBuf     = procLeadMean + 3*procLeadStd;
-  bufferEnd   = 3 + mfgMean + 3*mfgStd + 3 + custPayMean + 3*custPayStd + 10; % +3 mfgLag, +3 invoiceLag
+  bufferEnd   = mfgMean + 3*mfgStd + 3 + custPayMean + 3*custPayStd + 10;   % +3 for invoiceLag
 
   iYearStart = yearStartIdx(y);
   iYearEnd   = yearEndIdx(y);
@@ -493,13 +493,14 @@ for y = 1:nYears
     nComp     = length(compIdx);
 
     % Manufacturing timing
-    mfgDays     = max(1, round(mfgMean + mfgStd * randn()));
-    mfgLag      = randi([0, 3]);                            % 0-3 day lag between component arrival and mfg start
-    iCompArrive = bomStartInds(i);                          % date components arrive
-    iMfgStart   = min(nDates, iCompArrive + mfgLag);        % mfg begins mfgLag days after components arrive
-    iMfgEnd     = min(nDates, iMfgStart + mfgDays);
-    mfgStart    = allDates(iMfgStart);
-    mfgFinish   = allDates(iMfgEnd);
+    %   Manufacturing begins on the day components arrive (no planning buffer).
+    %   This preserves the invariant procDeliveryDate == mfgStart that the PAM
+    %   bond accounting in createDataCompany / buildPA assumes.
+    mfgDays   = max(1, round(mfgMean + mfgStd * randn()));
+    iMfgStart = bomStartInds(i);
+    iMfgEnd   = min(nDates, iMfgStart + mfgDays);
+    mfgStart  = allDates(iMfgStart);
+    mfgFinish = allDates(iMfgEnd);
     productOrderDate(productId) = Inf;  % will be set to min(procDate) across components below
 
     iDmMfgStart = getdmInd(mfgStart);
@@ -587,9 +588,9 @@ for y = 1:nYears
 
       % Procurement timing
       procLead         = max(5, round(procLeadMean + procLeadStd * randn()));
-      iProcDate        = max(2, iCompArrive - procLead);  % PO placed procLead days before components arrive
-      procDate         = allDates(iProcDate);              % order date (PO placed)
-      procDeliveryDate = allDates(iCompArrive);            % components arrive (decoupled from mfgStart by mfgLag)
+      iProcDate        = max(2, iMfgStart - procLead);   % PO placed procLead days before mfg starts
+      procDate         = allDates(iProcDate);            % order date (PO placed)
+      procDeliveryDate = mfgStart;                       % components arrive at mfgStart (no inventory buffer)
 
       % Track earliest component order date for BOM start
       productOrderDate(productId) = min(productOrderDate(productId), procDate);
