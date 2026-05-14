@@ -90,7 +90,7 @@ else
 end
 
 % --- Inflation per year (%) - placeholder, update with actual data -------
-inflationPct = 2.0 * ones(1, 21);  % 2% flat placeholder
+inflationPct = 2.5 * ones(1, 21);  % 2.5% flat assumption (approximate 20-year average)
 
 % --- Base selling prices per product type (EUR, year 2005) ---------------
 %
@@ -791,6 +791,18 @@ save(fullfile(dataFolder, 'AccountsPayable'), 'ap');
 
 % Dividend events for industry-method balance sheet tracking (cash sweeps to parent)
 save(fullfile(dataFolder, 'dividendEvents'), 'dividendEvents');
+
+% Validation summary (loaded by runMC to aggregate across K iterations)
+simSummary.actRevenue    = summActRevenue;   % [1 x nYears] EUR
+simSummary.actCOGS       = summActCOGS;      % [1 x nYears] EUR
+simSummary.targetRevenue = targetRevenue;    % [1 x nYears] EUR
+simSummary.targetGMpct   = grossMarginPct;   % [1 x nYears] %
+simSummary.simYears      = simYears;
+simSummary.curRevenue    = summCurRevenue;   % [nYears x nCur] EUR
+simSummary.curCOGS       = summCurCOGS;      % [nYears x nCur] EUR
+simSummary.curNames      = saleCurNames;
+simSummary.expPct        = saleExposurePct;
+save(fullfile(dataFolder, 'simSummary'), 'simSummary');
 
 %% ========================================================================
 %  VERBOSE YEAR-BY-YEAR SUMMARY

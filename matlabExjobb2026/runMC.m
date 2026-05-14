@@ -64,9 +64,20 @@ for p = 1:nPeriods
   quarterIdx{p} = find(dm.dates > periodDates(p) & dm.dates <= periodDates(p+1));
 end
 
+% Years spanned by simulation (2007-2025)
+qYears_pre  = year(datetime(periodDates(1:end-1), 'ConvertFrom', 'datenum'));
+uniqueYears = unique(qYears_pre);
+nYears_mc   = length(uniqueYears);
+nCur_mc     = 6;  % matches saleExposurePct in createMatFilesSim
+
 % =========================================================================
 % PRE-ALLOCATE RESULT ARRAYS  [K x nPeriods]
 % =========================================================================
+
+% --- Simulation validation (revenue, GM, currency exposure) ---------------
+mc.actRevEUR  = nan(K, nYears_mc);        % actual revenue per year [EUR]
+mc.actGMpct   = nan(K, nYears_mc);        % actual gross margin % per year
+mc.netExpPct  = nan(K, nYears_mc, nCur_mc); % net FX exposure % per year per currency
 
 % --- PAM benchmarks -------------------------------------------------------
 mc.FX_trans       = nan(K, nPeriods);   % Transactional FX — Bonds only
@@ -166,6 +177,10 @@ parfor k = 1:K
     % Already computed — load from disk and skip
     tmp = load(ckptFile, 'r');
     r   = tmp.r;
+    % Patch fields missing from old checkpoints
+    if ~isfield(r, 'actRevEUR'), r.actRevEUR = nan(1, nYears_mc); end
+    if ~isfield(r, 'actGMpct'),  r.actGMpct  = nan(1, nYears_mc); end
+    if ~isfield(r, 'netExpPct'), r.netExpPct = nan(nYears_mc, nCur_mc); end
     results{k} = r;
   else
     % Each parallel worker writes to its own subfolder to avoid file conflicts
@@ -194,9 +209,22 @@ parfor k = 1:K
       'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
       'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
       'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
-      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods));
+      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods), ...
+      'actRevEUR',  nan(1, nYears_mc), 'actGMpct',  nan(1, nYears_mc), ...
+      'netExpPct',  nan(nYears_mc, nCur_mc));
 
     createMatFilesSim(dm, k, false, wFolder, sandvikArrays);
+
+    % Load simulation validation summary
+    try
+      tmp_ss = load(fullfile(wFolder, 'simSummary'), 'simSummary');
+      ss = tmp_ss.simSummary;
+      r.actRevEUR = ss.actRevenue;
+      r.actGMpct  = 100 * (1 - ss.actCOGS ./ ss.actRevenue);
+      netRev      = ss.curRevenue - ss.curCOGS;   % [nYears x nCur] EUR
+      r.netExpPct = 100 * (netRev ./ ss.actRevenue');
+    catch
+    end
 
     try
       dc = createDataCompany(dm, localSettings);
@@ -278,6 +306,9 @@ end
 for k = 1:K
   r = results{k};
   if isempty(r), continue; end
+  mc.actRevEUR(k,:)    = r.actRevEUR;
+  mc.actGMpct(k,:)     = r.actGMpct;
+  mc.netExpPct(k,:,:)  = r.netExpPct;
   mc.FX_trans(k,:)      = r.FX_trans;      mc.FX_trans_BOM(k,:)  = r.FX_trans_BOM;
   mc.FX_transl(k,:)     = r.FX_transl;
   % --- Stock-based PAM CC DISABLED --------------------------------------
@@ -369,6 +400,84 @@ end
 fprintf('%s\n', repmat('-', 1, 56));
 fprintf('%-6s %14.0f %14.0f %14.0f\n', 'TOTAL', ...
   sum(TI_annual), sum(TI_BOM_annual), sum(OCI_annual));
+
+% =========================================================================
+% SIMULATION VALIDATION — Revenue, Gross Margin, Currency Exposure
+% =========================================================================
+
+valValid = ~any(isnan(mc.actRevEUR), 2);
+nValValid = sum(valValid);
+
+% Load targets from simSummary (written by worker 1; same targets across all K)
+ss_targets = [];
+for wf_try = {'simulatedData', fullfile('simulatedData','worker_1'), ...
+              fullfile('simulatedData','worker_2'), fullfile('simulatedData','worker_3')}
+  try
+    tmp_t = load(fullfile(wf_try{1}, 'simSummary'), 'simSummary');
+    ss_targets = tmp_t.simSummary;
+    break;
+  catch
+  end
+end
+
+if ~isempty(ss_targets) && nValValid > 0
+  tgtRev   = ss_targets.targetRevenue / 1e6;   % MEUR
+  tgtGM    = ss_targets.targetGMpct;
+  curNames = ss_targets.curNames;
+  tgtExp   = ss_targets.expPct;
+  simYrs   = ss_targets.simYears;
+  nYv      = length(simYrs);
+
+  meanRev  = mean(mc.actRevEUR(valValid, 1:nYv), 1) / 1e6;
+  stdRev   = std(mc.actRevEUR(valValid,  1:nYv), 0, 1) / 1e6;
+  meanGM   = mean(mc.actGMpct(valValid,  1:nYv), 1);
+  stdGM    = std(mc.actGMpct(valValid,   1:nYv), 0, 1);
+
+  fprintf('\n=== Simulation Validation — Revenue & Gross Margin (mean ± std across %d iterations) ===\n', nValValid);
+  fprintf('%-6s %10s %10s %8s %10s %8s %8s\n', 'Year', 'TgtRev(M)', 'MeanRev(M)', 'StdRev', 'TgtGM%', 'MeanGM%', 'StdGM%');
+  fprintf('%s\n', repmat('-', 1, 72));
+  for y = 1:nYv
+    fprintf('%-6d %10.1f %10.1f %8.1f %10.1f %8.1f %8.1f\n', ...
+      simYrs(y), tgtRev(y), meanRev(y), stdRev(y), tgtGM(y), meanGM(y), stdGM(y));
+  end
+  fprintf('%s\n', repmat('-', 1, 72));
+
+  % Currency exposure table
+  netExp3 = mc.netExpPct(valValid, 1:nYv, :);   % [nValValid x nYv x nCur]
+  meanExp = squeeze(mean(mean(netExp3, 1), 2));  % [nCur x 1] mean over K and years
+  stdExp  = squeeze(std(reshape(netExp3, nValValid*nYv, []), 0, 1)); % [nCur x 1]
+  avgGM_v = mean(tgtGM);
+  fprintf('\n=== Simulation Validation — Net Currency Exposure (mean ± std across K×years) ===\n');
+  fprintf('%-6s %10s %10s %8s\n', 'Curr', 'Target%', 'Mean%', 'Std%');
+  fprintf('%s\n', repmat('-', 1, 38));
+  for c = 1:length(curNames)
+    tgt_c = avgGM_v * tgtExp(c) / 100;
+    fprintf('%-6s %10.2f %10.2f %8.2f\n', curNames{c}, tgt_c, meanExp(c), stdExp(c));
+  end
+  fprintf('%s\n', repmat('-', 1, 38));
+
+  % --- Figure 29: Revenue and GM validation ---------------------------------
+  fig = figure('Visible','off');
+  subplot(2,1,1);
+  hold on;
+  fill([simYrs, fliplr(simYrs)], [meanRev-stdRev, fliplr(meanRev+stdRev)], ...
+    cPAM, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+  plot(simYrs, meanRev, '-o', 'Color', cPAM, 'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'Simulated (mean±std)');
+  plot(simYrs, tgtRev,  '--k', 'LineWidth', 1.2, 'DisplayName', 'Target');
+  ylabel('Revenue (MEUR)'); legend('Location','Best'); grid on;
+  title('Revenue: simulated vs target');
+
+  subplot(2,1,2);
+  hold on;
+  fill([simYrs, fliplr(simYrs)], [meanGM-stdGM, fliplr(meanGM+stdGM)], ...
+    cPAM, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+  plot(simYrs, meanGM, '-o', 'Color', cPAM, 'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'Simulated (mean±std)');
+  plot(simYrs, tgtGM,  '--k', 'LineWidth', 1.2, 'DisplayName', 'Target');
+  ylabel('Gross Margin (%)'); xlabel('Year'); legend('Location','Best'); grid on;
+  title('Gross margin: simulated vs target');
+  formatFig(fig, 16, 12);
+  saveas(fig, fullfile(figDir, 'validation_rev_gm.pdf'));
+end
 
 % =========================================================================
 % OUTPUT — Three sections: TI | Translation (OCI) | Constant Currency (CC)
@@ -717,6 +826,65 @@ formatFig(fig, 12, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 
 % =========================================================================
+% FIGURES 24-28: Per-quarter std histograms
+% For each error series [K x nPeriods], compute std across K for each quarter
+% → nPeriods values. Histogram shows how simulation noise varies over time.
+% =========================================================================
+
+% --- Figure 24: TI per-quarter std — PAM bonds benchmark ------------------
+fig = figure('Visible','off'); hold on;
+stdHist(gca, err_TI_M1,  'PAM bonds vs M1',          cM1);
+stdHist(gca, err_TI_M2w, 'PAM bonds vs M2 weekly',   cM2w);
+stdHist(gca, err_TI_M2m, 'PAM bonds vs M2 monthly',  cM2m);
+stdHist(gca, err_TI_M2q, 'PAM bonds vs M2 quarterly',cM2q);
+xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+legend('Location','Best'); grid on; title('TI — per-quarter std distribution (PAM bonds benchmark)');
+formatFig(fig, 12, 8);
+saveas(fig, fullfile(figDir,'TI_std_hist_bonds.pdf'));
+
+% --- Figure 25: TI per-quarter std — PAM bonds+BOM benchmark --------------
+fig = figure('Visible','off'); hold on;
+stdHist(gca, err_BOM_TI_M1,  'PAM bonds+BOM vs M1',          cM1);
+stdHist(gca, err_BOM_TI_M2w, 'PAM bonds+BOM vs M2 weekly',   cM2w);
+stdHist(gca, err_BOM_TI_M2m, 'PAM bonds+BOM vs M2 monthly',  cM2m);
+stdHist(gca, err_BOM_TI_M2q, 'PAM bonds+BOM vs M2 quarterly',cM2q);
+xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+legend('Location','Best'); grid on; title('TI — per-quarter std distribution (PAM bonds+BOM benchmark)');
+formatFig(fig, 12, 8);
+saveas(fig, fullfile(figDir,'TI_std_hist_bom.pdf'));
+
+% --- Figure 26: OCI per-quarter std ----------------------------------------
+fig = figure('Visible','off'); hold on;
+stdHist(gca, err_OCI_M1,  'PAM vs M1',          cM1);
+stdHist(gca, err_OCI_M2w, 'PAM vs M2 weekly',   cM2w);
+stdHist(gca, err_OCI_M2m, 'PAM vs M2 monthly',  cM2m);
+stdHist(gca, err_OCI_M2q, 'PAM vs M2 quarterly',cM2q);
+xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+legend('Location','Best'); grid on; title('OCI — per-quarter std distribution');
+formatFig(fig, 12, 8);
+saveas(fig, fullfile(figDir,'OCI_std_hist.pdf'));
+
+% --- Figure 27: CC per-quarter std — PAM BOM benchmark --------------------
+fig = figure('Visible','off'); hold on;
+stdHist(gca, err_BOM_M1,    'PAM BOM vs M1 CC',    cM1);
+stdHist(gca, err_BOM_avg,   'PAM BOM vs CC avg',   cCCavg);
+stdHist(gca, err_BOM_close, 'PAM BOM vs CC close', cCCcls);
+xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+legend('Location','Best'); grid on; title('CC — per-quarter std distribution (PAM BOM benchmark)');
+formatFig(fig, 12, 8);
+saveas(fig, fullfile(figDir,'CC_std_hist_bom.pdf'));
+
+% --- Figure 28: CC per-quarter std — PAM bonds benchmark ------------------
+fig = figure('Visible','off'); hold on;
+stdHist(gca, err_bonds_M1,    'PAM bonds vs M1 CC',    cM1);
+stdHist(gca, err_bonds_avg,   'PAM bonds vs CC avg',   cCCavg);
+stdHist(gca, err_bonds_close, 'PAM bonds vs CC close', cCCcls);
+xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+legend('Location','Best'); grid on; title('CC — per-quarter std distribution (PAM bonds benchmark)');
+formatFig(fig, 12, 8);
+saveas(fig, fullfile(figDir,'CC_std_hist_bonds.pdf'));
+
+% =========================================================================
 % SENSITIVITY — Timing-parameter sweep
 %   Set doSensitivity = true before running to execute runSensitivity.m
 %   after the main MC completes.
@@ -737,18 +905,13 @@ function printHeader()
 end
 
 function printErrRow(label, A, B)
-% A, B are [K x nPeriods] matrices.
-% ME   = grand mean error (averaged over all K*nPeriods observations).
-% Std  = mean of per-quarter stds (std across K for each quarter, then averaged).
-%        This captures simulation noise only, not time-series variation.
-% CI   = ME +/- 1.96 * Std / sqrt(K)  (uncertainty on the mean for a typical quarter).
-% RMSE = root mean squared error across all K*nPeriods observations.
-  e     = A - B;                        % [K x nPeriods]
-  K     = size(e, 1);
+% A, B are [K x nPeriods] matrices. All stats computed over all K*nPeriods obs.
+  e     = A - B;
+  n     = numel(e);
   me    = mean(e(:));
-  s     = mean(std(e, 0, 1));           % mean of per-quarter stds across K iterations
+  s     = std(e(:));
   rmse  = sqrt(mean(e(:).^2));
-  ci_hw = 1.96 * s / sqrt(K);
+  ci_hw = 1.96 * s / sqrt(n);
   fprintf('%-34s %12.0f %12.0f   [%12.0f, %12.0f]  %12.0f\n', ...
     label, me, s, me-ci_hw, me+ci_hw, rmse);
 end
@@ -764,6 +927,13 @@ end
 function saveCheckpoint(fname, r) %#ok<INUSD>
 % Wrapper so save can be called from inside parfor (direct save is not allowed).
   save(fname, 'r');
+end
+
+function stdHist(ax, e, lbl, col)
+% Plot histogram of per-quarter std (std across K for each quarter).
+  s = std(e, 0, 1);
+  histogram(ax, s, 10, 'FaceColor', col, 'FaceAlpha', 0.4, 'EdgeColor', col, ...
+    'DisplayName', lbl);
 end
 
 function formatFig(fig, w, h)
