@@ -559,10 +559,10 @@ printActualTable( ...
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds\n');
 fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
 printHeader();
-printRow('PAM bonds      vs  M1',           PAM_TI_q, M1_TI_q);
-printRow('PAM bonds      vs  M2 weekly',    PAM_TI_q, M2w_TI_q);
-printRow('PAM bonds      vs  M2 monthly',   PAM_TI_q, M2m_TI_q);
-printRow('PAM bonds      vs  M2 quarterly', PAM_TI_q, M2q_TI_q);
+printRow('PAM bonds      vs  M1',           M1_TI_q,  PAM_TI_q);
+printRow('PAM bonds      vs  M2 weekly',    M2w_TI_q, PAM_TI_q);
+printRow('PAM bonds      vs  M2 monthly',   M2m_TI_q, PAM_TI_q);
+printRow('PAM bonds      vs  M2 quarterly', M2q_TI_q, PAM_TI_q);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry vs industry\n');
 printRow('M1             vs  M2 weekly',    M1_TI_q, M2w_TI_q);
@@ -573,21 +573,21 @@ printRow('M1             vs  M2 quarterly', M1_TI_q, M2q_TI_q);
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds+BOM\n');
 fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
 printHeader();
-printRow('PAM bonds+BOM  vs  M1',           PAM_TI_BOM_q, M1_TI_q);
-printRow('PAM bonds+BOM  vs  M2 weekly',    PAM_TI_BOM_q, M2w_TI_q);
-printRow('PAM bonds+BOM  vs  M2 monthly',   PAM_TI_BOM_q, M2m_TI_q);
-printRow('PAM bonds+BOM  vs  M2 quarterly', PAM_TI_BOM_q, M2q_TI_q);
+printRow('PAM bonds+BOM  vs  M1',           M1_TI_q,  PAM_TI_BOM_q);
+printRow('PAM bonds+BOM  vs  M2 weekly',    M2w_TI_q, PAM_TI_BOM_q);
+printRow('PAM bonds+BOM  vs  M2 monthly',   M2m_TI_q, PAM_TI_BOM_q);
+printRow('PAM bonds+BOM  vs  M2 quarterly', M2q_TI_q, PAM_TI_BOM_q);
 
-% PAM bonds error terms
-err_TI_M1  = (PAM_TI_q - M1_TI_q)  / 1e6;
-err_TI_M2w = (PAM_TI_q - M2w_TI_q) / 1e6;
-err_TI_M2m = (PAM_TI_q - M2m_TI_q) / 1e6;
-err_TI_M2q = (PAM_TI_q - M2q_TI_q) / 1e6;
+% PAM bonds error terms (method − benchmark, positive = industry overstates)
+err_TI_M1  = (M1_TI_q  - PAM_TI_q) / 1e6;
+err_TI_M2w = (M2w_TI_q - PAM_TI_q) / 1e6;
+err_TI_M2m = (M2m_TI_q - PAM_TI_q) / 1e6;
+err_TI_M2q = (M2q_TI_q - PAM_TI_q) / 1e6;
 % PAM bonds+BOM error terms
-err_BOM_TI_M1  = (PAM_TI_BOM_q - M1_TI_q)  / 1e6;
-err_BOM_TI_M2w = (PAM_TI_BOM_q - M2w_TI_q) / 1e6;
-err_BOM_TI_M2m = (PAM_TI_BOM_q - M2m_TI_q) / 1e6;
-err_BOM_TI_M2q = (PAM_TI_BOM_q - M2q_TI_q) / 1e6;
+err_BOM_TI_M1  = (M1_TI_q  - PAM_TI_BOM_q) / 1e6;
+err_BOM_TI_M2w = (M2w_TI_q - PAM_TI_BOM_q) / 1e6;
+err_BOM_TI_M2m = (M2m_TI_q - PAM_TI_BOM_q) / 1e6;
+err_BOM_TI_M2q = (M2q_TI_q - PAM_TI_BOM_q) / 1e6;
 
 % --- Figure 10: TI mean per quarter ---------------------------------------
 fig = figure(10); clf; hold on;
@@ -668,20 +668,20 @@ printActualTable( ...
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM Translation\n');
 fprintf('N = %d obs (%d iterations x %d quarters)\n', N_obs, nValid, nPeriods);
 printHeader();
-printRow('PAM transl  vs  M1 OCI',       PAM_OCI_q, M1_OCI_q);
-printRow('PAM transl  vs  M2 weekly',    PAM_OCI_q, M2w_OCI_q);
-printRow('PAM transl  vs  M2 monthly',   PAM_OCI_q, M2m_OCI_q);
-printRow('PAM transl  vs  M2 quarterly', PAM_OCI_q, M2q_OCI_q);
+printRow('PAM transl  vs  M1 OCI',       M1_OCI_q,  PAM_OCI_q);
+printRow('PAM transl  vs  M2 weekly',    M2w_OCI_q, PAM_OCI_q);
+printRow('PAM transl  vs  M2 monthly',   M2m_OCI_q, PAM_OCI_q);
+printRow('PAM transl  vs  M2 quarterly', M2q_OCI_q, PAM_OCI_q);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry vs industry\n');
 printRow('M1 OCI      vs  M2 weekly',    M1_OCI_q, M2w_OCI_q);
 printRow('M1 OCI      vs  M2 monthly',   M1_OCI_q, M2m_OCI_q);
 printRow('M1 OCI      vs  M2 quarterly', M1_OCI_q, M2q_OCI_q);
 
-err_OCI_M1  = (PAM_OCI_q - M1_OCI_q)  / 1e6;
-err_OCI_M2w = (PAM_OCI_q - M2w_OCI_q) / 1e6;
-err_OCI_M2m = (PAM_OCI_q - M2m_OCI_q) / 1e6;
-err_OCI_M2q = (PAM_OCI_q - M2q_OCI_q) / 1e6;
+err_OCI_M1  = (M1_OCI_q  - PAM_OCI_q) / 1e6;
+err_OCI_M2w = (M2w_OCI_q - PAM_OCI_q) / 1e6;
+err_OCI_M2m = (M2m_OCI_q - PAM_OCI_q) / 1e6;
+err_OCI_M2q = (M2q_OCI_q - PAM_OCI_q) / 1e6;
 
 % --- Figure 15: OCI mean per quarter --------------------------------------
 fig = figure(15); clf; hold on;
@@ -778,9 +778,9 @@ printActualTable( ...
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds (flow)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM bonds      vs  M1 CC',    fBonds_cc, M1_CC_cc);
-printRow('PAM bonds      vs  CC avg',   fBonds_cc, CC_avg_cc);
-printRow('PAM bonds      vs  CC close', fBonds_cc, CC_close_cc);
+printRow('PAM bonds      vs  M1 CC',    M1_CC_cc,  fBonds_cc);
+printRow('PAM bonds      vs  CC avg',   CC_avg_cc, fBonds_cc);
+printRow('PAM bonds      vs  CC close', CC_close_cc, fBonds_cc);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry CC vs industry CC\n');
 printRow('M1 CC          vs  CC avg',   M1_CC_cc,  CC_avg_cc);
@@ -791,16 +791,16 @@ printRow('CC avg         vs  CC close', CC_avg_cc, CC_close_cc);
 fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOM (flow)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM BOM        vs  M1 CC',    fBOM_cc, M1_CC_cc);
-printRow('PAM BOM        vs  CC avg',   fBOM_cc, CC_avg_cc);
-printRow('PAM BOM        vs  CC close', fBOM_cc, CC_close_cc);
+printRow('PAM BOM        vs  M1 CC',    M1_CC_cc,  fBOM_cc);
+printRow('PAM BOM        vs  CC avg',   CC_avg_cc, fBOM_cc);
+printRow('PAM BOM        vs  CC close', CC_close_cc, fBOM_cc);
 
-err_BOM_M1    = (fBOM_cc   - M1_CC_cc)    / 1e6;
-err_BOM_avg   = (fBOM_cc   - CC_avg_cc)   / 1e6;
-err_BOM_close = (fBOM_cc   - CC_close_cc) / 1e6;
-err_bonds_M1  = (fBonds_cc - M1_CC_cc)    / 1e6;
-err_bonds_avg = (fBonds_cc - CC_avg_cc)   / 1e6;
-err_bonds_close = (fBonds_cc - CC_close_cc) / 1e6;
+err_BOM_M1    = (M1_CC_cc    - fBOM_cc)   / 1e6;
+err_BOM_avg   = (CC_avg_cc   - fBOM_cc)   / 1e6;
+err_BOM_close = (CC_close_cc - fBOM_cc)   / 1e6;
+err_bonds_M1  = (M1_CC_cc    - fBonds_cc) / 1e6;
+err_bonds_avg = (CC_avg_cc   - fBonds_cc) / 1e6;
+err_bonds_close = (CC_close_cc - fBonds_cc) / 1e6;
 
 % --- Figure 19: CC mean per quarter (2008+) --------------------------------
 fig = figure(19); clf; hold on;
