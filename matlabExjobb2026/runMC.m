@@ -635,7 +635,7 @@ kdeplot(gca, err_TI_M2m(:), 'PAM bonds vs M2 monthly',  cM2m);
 kdeplot(gca, err_TI_M2q(:), 'PAM bonds vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('TI — error densities (PAM bonds benchmark)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_kde_bonds.pdf'));
 
 % --- Figure 14: TI error KDE — PAM bonds+BOM benchmark -------------------
@@ -646,7 +646,7 @@ kdeplot(gca, err_BOM_TI_M2m(:), 'PAM bonds+BOM vs M2 monthly',  cM2m);
 kdeplot(gca, err_BOM_TI_M2q(:), 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('TI — error densities (PAM bonds+BOM benchmark)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_kde_bom.pdf'));
 
 % =========================================================================
@@ -714,7 +714,7 @@ fig = figure(17); clf;
 boxplot([err_OCI_M1(:), err_OCI_M2w(:), err_OCI_M2m(:), err_OCI_M2q(:)], ...
   'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
 yline(0,'k--','HandleVisibility','off'); ylabel('SEK million'); title('OCI — error distributions');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_errors_box.pdf'));
 
 % --- Figure 18: OCI error KDE ---------------------------------------------
@@ -725,7 +725,7 @@ kdeplot(gca, err_OCI_M2m(:), 'PAM vs M2 monthly',  cM2m);
 kdeplot(gca, err_OCI_M2q(:), 'PAM vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('OCI — error densities');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_errors_kde.pdf'));
 
 % =========================================================================
@@ -844,7 +844,7 @@ kdeplot(gca, err_BOM_avg(:),   'PAM BOM vs CC avg',   cCCavg);
 kdeplot(gca, err_BOM_close(:), 'PAM BOM vs CC close', cCCcls);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('CC — error densities (PAM BOM benchmark)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bom.pdf'));
 
 % --- Figure 23: CC error KDE — PAM bonds benchmark -----------------------
@@ -854,7 +854,7 @@ kdeplot(gca, err_bonds_avg(:),   'PAM bonds vs CC avg',   cCCavg);
 kdeplot(gca, err_bonds_close(:), 'PAM bonds vs CC close', cCCcls);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
 legend('Location','Best'); grid on; title('CC — error densities (PAM bonds benchmark)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 
 % =========================================================================
@@ -871,7 +871,7 @@ stdHist(gca, err_TI_M2m, 'PAM bonds vs M2 monthly',  cM2m);
 stdHist(gca, err_TI_M2q, 'PAM bonds vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
 legend('Location','Best'); grid on; title('TI — quarterly std (PAM bonds)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bonds.pdf'));
 
 % --- Figure 25: TI per-quarter std — PAM bonds+BOM benchmark --------------
@@ -882,7 +882,7 @@ stdHist(gca, err_BOM_TI_M2m, 'PAM bonds+BOM vs M2 monthly',  cM2m);
 stdHist(gca, err_BOM_TI_M2q, 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
 legend('Location','Best'); grid on; title('TI — quarterly std (PAM bonds+BOM)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bom.pdf'));
 
 % --- Figure 26: OCI per-quarter std ----------------------------------------
@@ -893,7 +893,7 @@ stdHist(gca, err_OCI_M2m, 'PAM vs M2 monthly',  cM2m);
 stdHist(gca, err_OCI_M2q, 'PAM vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
 legend('Location','Best'); grid on; title('OCI — quarterly std');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_std_hist.pdf'));
 
 % --- Figure 27: CC per-quarter std — PAM BOM benchmark --------------------
@@ -903,7 +903,7 @@ stdHist(gca, err_BOM_avg,   'PAM BOM vs CC avg',   cCCavg);
 stdHist(gca, err_BOM_close, 'PAM BOM vs CC close', cCCcls);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
 legend('Location','Best'); grid on; title('CC — quarterly std (PAM BOM)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bom.pdf'));
 
 % --- Figure 28: CC per-quarter std — PAM bonds benchmark ------------------
@@ -913,7 +913,7 @@ stdHist(gca, err_bonds_avg,   'PAM bonds vs CC avg',   cCCavg);
 stdHist(gca, err_bonds_close, 'PAM bonds vs CC close', cCCcls);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
 legend('Location','Best'); grid on; title('CC — quarterly std (PAM bonds)');
-formatFig(fig, 12, 8);
+formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bonds.pdf'));
 
 % =========================================================================
@@ -963,10 +963,13 @@ end
 
 function stdHist(ax, e, lbl, col)
 % Plot histogram of per-quarter std (std across K for each quarter).
-% Stairs style (no fill) avoids blended colors when series overlap.
+% Uses stairs() directly (Line object) so legend shows a colored line,
+% not the near-invisible outlined patch from histogram DisplayStyle='stairs'.
   s = std(e, 0, 1);
-  histogram(ax, s, 10, 'DisplayStyle','stairs', 'EdgeColor', col, ...
-    'LineWidth', 2, 'DisplayName', lbl);
+  [counts, edges] = histcounts(s, 10);
+  % Append final edge at zero so the last bar closes properly
+  stairs(ax, [edges(1:end-1), edges(end)], [counts, 0], ...
+    'Color', col, 'LineWidth', 2, 'DisplayName', lbl);
 end
 
 function formatFig(fig, w, h)
