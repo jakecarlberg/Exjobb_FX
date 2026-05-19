@@ -977,10 +977,12 @@ end
 
 function formatFig(fig, w, h)
 % Set figure to exact physical size and apply consistent typography to all axes.
+% Uses -depth 1 to restrict to direct children of the figure, avoiding
+% hidden internal axes created by boxplot (which would corrupt outlier colors).
   set(fig, 'Units','centimeters', 'Position',[0 0 w h]);
   set(fig, 'PaperUnits','centimeters', 'PaperSize',[w h], ...
            'PaperPosition',[0 0 w h], 'PaperPositionMode','manual');
-  allAx = findobj(fig, 'Type', 'axes');
+  allAx = findobj(fig, '-depth', 1, 'Type', 'axes');
   for i = 1:length(allAx)
     ax = allAx(i);
     ax.FontSize         = 9;
