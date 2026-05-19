@@ -85,6 +85,11 @@ for col = 3:21
 end
 fprintf('Sandvik data pre-loaded.\n');
 
+% Checkpoint folder — each (param, scaling, seed) cell saved to disk so runs
+% survive interruption (mirrors runMC's mc_checkpoints pattern).
+ckptDir = 'sensitivity_checkpoints';
+if ~exist(ckptDir, 'dir'), mkdir(ckptDir); end
+
 % =========================================================================
 % QUARTERLY PERIODS
 % =========================================================================
@@ -124,9 +129,35 @@ end
 % =========================================================================
 % MAIN SWEEP
 % =========================================================================
+totalCells = nParams * nScales * K;
+nDone = 0;
+for pi_ = 1:nParams
+  for si_ = 1:nScales
+    for k_ = 1:K
+      f_ = fullfile(ckptDir, sprintf('%s_s%d_seed_%04d.mat', ...
+        paramSweeps{pi_,1}, si_, k_));
+      if exist(f_, 'file'), nDone = nDone + 1; end
+    end
+  end
+end
+if nDone > 0
+  fprintf('\nResuming: %d/%d iterations already done (found in %s)\n', ...
+    nDone, totalCells, ckptDir);
+end
+
 fprintf('\nSensitivity sweep: K=%d, %d params x %d scalings = %d MC runs\n\n', ...
   K, nParams, nScales, nParams*nScales);
 tStart = tic;
+
+% Progress counter via DataQueue (parfor-safe; skipped if no PCT).
+% Prints one line per seed completion with cumulative wall time.
+try
+  dq = parallel.pool.DataQueue;
+  afterEach(dq, @(msg) fprintf('  [%s s=%.2f] seed %3d %s  (%.0fs elapsed)\n', ...
+    msg.paramKey, msg.s, msg.k, msg.tag, toc(tStart)));
+catch
+  dq = [];
+end
 
 for pi = 1:nParams
   paramKey   = paramSweeps{pi, 1};
@@ -141,7 +172,7 @@ for pi = 1:nParams
     timingOverride.(meanField) = (1 - s) * baseline.(meanField);
     timingOverride.(stdField)  = (1 - s) * baseline.(stdField);
 
-    fprintf('[%s s=%.2f]  mu=%.1f  sigma=%.1f ... ', ...
+    fprintf('[%s s=%.2f]  mu=%.1f  sigma=%.1f\n', ...
       paramKey, s, timingOverride.(meanField), timingOverride.(stdField));
     tCell = tic;
 
@@ -160,7 +191,25 @@ for pi = 1:nParams
 
     % Inner MC loop
     iterResults = cell(K, 1);
+    ckptDirLocal  = ckptDir;
+    paramKeyLocal = paramKey;
+    siLocal       = si;
+    sLocal        = s;
+    dqLocal       = dq;
     parfor k = 1:K
+      ckptFile = fullfile(ckptDirLocal, sprintf('%s_s%d_seed_%04d.mat', ...
+        paramKeyLocal, siLocal, k));
+
+      if exist(ckptFile, 'file')
+        % Already computed — load and skip
+        tmp = load(ckptFile, 'r');
+        iterResults{k} = tmp.r;
+        if ~isempty(dqLocal)
+          send(dqLocal, struct('paramKey',paramKeyLocal,'s',sLocal,'k',k,'tag','cached'));
+        end
+        continue
+      end
+
       tk = getCurrentTask();
       if isempty(tk), wFolder = 'simulatedData';
       else,           wFolder = fullfile('simulatedData', sprintf('worker_%d', tk.ID));
@@ -217,7 +266,12 @@ for pi = 1:nParams
         fprintf(2, '\n  iter %d ERROR: %s\n', k, ME.message);
       end
 
+      % Save checkpoint so this (param, scaling, seed) is not recomputed on restart
+      saveCheckpoint(ckptFile, r);
       iterResults{k} = r;
+      if ~isempty(dqLocal)
+        send(dqLocal, struct('paramKey',paramKeyLocal,'s',sLocal,'k',k,'tag','done'));
+      end
     end
 
     % Assemble per-method matrices
@@ -263,8 +317,14 @@ for pi = 1:nParams
     results.rmse_CC.CC_close(pi,si)  = rmse(fBOM, CC_close); results.me_CC.CC_close(pi,si)  = me(fBOM, CC_close);
     results.rmse_CC.PAM_bonds(pi,si) = rmse(fBOM, fBonds);   results.me_CC.PAM_bonds(pi,si) = me(fBOM, fBonds);
 
-    fprintf('done (%.0fs)  RMSE: TI/M1=%.1fM  OCI/M1=%.1fM  CC/M1=%.1fM  CC/bonds=%.1fM\n', ...
-      toc(tCell), ...
+    cellsDone   = (pi-1)*nScales + si;
+    cellsTotal  = nParams * nScales;
+    elapsedTot  = toc(tStart);
+    avgCellTime = elapsedTot / cellsDone;
+    etaSec      = avgCellTime * (cellsTotal - cellsDone);
+    fprintf(['[%s s=%.2f] cell done in %.0fs | total %.0fs | ETA %.0fs (cell %d/%d) | ' ...
+             'RMSE TI/M1=%.1fM  OCI/M1=%.1fM  CC/M1=%.1fM  CC/bonds=%.1fM\n'], ...
+      paramKey, s, toc(tCell), elapsedTot, etaSec, cellsDone, cellsTotal, ...
       results.rmse_TI.M1(pi,si)/1e6, results.rmse_OCI.M1(pi,si)/1e6, ...
       results.rmse_CC.M1_CC(pi,si)/1e6, results.rmse_CC.PAM_bonds(pi,si)/1e6);
   end
@@ -380,4 +440,9 @@ function printRMSErow(label, row, nScales)
     fprintf('%10.2f', row(si) / 1e6);
   end
   fprintf('\n');
+end
+
+function saveCheckpoint(fname, r) %#ok<INUSD>
+% Wrapper so save can be called from inside parfor (direct save is not allowed).
+  save(fname, 'r');
 end
