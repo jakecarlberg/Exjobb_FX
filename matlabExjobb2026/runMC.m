@@ -151,7 +151,10 @@ fprintf('Sandvik data pre-loaded (will not be re-read per iteration).\n\n');
 ckptDir = 'mc_checkpoints';
 if ~exist(ckptDir, 'dir'), mkdir(ckptDir); end
 
-nDone = sum(arrayfun(@(k) exist(fullfile(ckptDir, sprintf('seed_%04d.mat',k)),'file')>0, 1:K));
+% Count completed seeds by scanning the folder (not just 1:K, so seeds
+% with numbers above K are also detected and reported correctly).
+ckptFiles = dir(fullfile(ckptDir, 'seed_*.mat'));
+nDone = length(ckptFiles);
 if nDone > 0
   fprintf('Resuming: %d/%d seeds already done (found in %s)\n\n', nDone, K, ckptDir);
 end
