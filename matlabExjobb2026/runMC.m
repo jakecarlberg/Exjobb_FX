@@ -21,7 +21,32 @@
 % =========================================================================
 % SETTINGS
 % =========================================================================
-if ~exist('K',    'var'), K    = 200; end
+if ~exist('K',    'var'), K    = 100; end
+
+% -------------------------------------------------------------------------
+% DISTRIBUTED RUN — optional, leave commented out to run all seeds locally
+% -------------------------------------------------------------------------
+% To run a single machine over ALL seeds 1:K (default), leave the line
+% below commented out. To split the workload across multiple machines,
+% uncomment and set `seeds` to the range this machine should handle, e.g.:
+%
+%   Machine A:  seeds = 1:500;        % first half
+%   Machine B:  seeds = 501:1000;     % second half
+%
+% Both machines must write checkpoints into the same `mc_checkpoints/`
+% folder (network share, OneDrive, etc.) or have their folders merged
+% before final aggregation. Filenames embed the seed number, so there is
+% no collision between machines.
+%
+% The in-script summary tables at the end will only count THIS machine's
+% seeds. To get the combined summary across both halves, copy/merge the
+% checkpoints into one folder and re-run runMC with `seeds` UNSET (and
+% `clear seeds` first if needed). The parfor will skip every seed via the
+% existing "checkpoint exists" path, then aggregation runs over 1:K.
+%
+% seeds = 1:500;    %  <-- uncomment and edit this line to split work
+% -------------------------------------------------------------------------
+if ~exist('seeds', 'var'), seeds = 1:K; end
 
 settings.dataFolder         = 'simulatedData';
 settings.bomPricing         = 'DeterministicCashFlows';
@@ -159,11 +184,20 @@ if nDone > 0
   fprintf('Resuming: %d/%d seeds already done (found in %s)\n\n', nDone, K, ckptDir);
 end
 
-fprintf('Starting Monte Carlo: K=%d, nQuarters=%d\n\n', K, nPeriods);
+if isequal(seeds, 1:K)
+  fprintf('Starting Monte Carlo: K=%d, nQuarters=%d\n\n', K, nPeriods);
+else
+  fprintf('Starting Monte Carlo: K=%d total, this machine runs seeds %d:%d (%d iters), nQuarters=%d\n\n', ...
+    K, min(seeds), max(seeds), length(seeds), nPeriods);
+end
 tStart = tic;
 
-% Collect per-iteration results in a cell array (required for parfor)
-results = cell(K, 1);
+% Collect per-iteration results in a cell array (required for parfor).
+% Indexed by ii (1..length(seeds)) inside parfor so the slicing classifier
+% works; scattered back to a K-sized `results` cell after the parfor for
+% downstream code that assumes `results{k}` with k in 1..K.
+results     = cell(K, 1);
+seedResults = cell(length(seeds), 1);
 
 % Progress counter via DataQueue (parfor-safe; skipped if no PCT)
 try
@@ -173,7 +207,10 @@ catch
   dq = [];
 end
 
-parfor k = 1:K
+% Iterate over `seeds` (a subset of 1:K) — see SETTINGS block above for
+% how to split a run across multiple machines.
+parfor ii = 1:length(seeds)
+  k = seeds(ii);
   ckptFile = fullfile(ckptDir, sprintf('seed_%04d.mat', k));
 
   if exist(ckptFile, 'file')
@@ -184,7 +221,7 @@ parfor k = 1:K
     if ~isfield(r, 'actRevEUR'), r.actRevEUR = nan(1, nYears_mc); end
     if ~isfield(r, 'actGMpct'),  r.actGMpct  = nan(1, nYears_mc); end
     if ~isfield(r, 'netExpPct'), r.netExpPct = nan(nYears_mc, nCur_mc); end
-    results{k} = r;
+    seedResults{ii} = r;
   else
     % Each parallel worker writes to its own subfolder to avoid file conflicts
     t = getCurrentTask();
@@ -299,10 +336,18 @@ parfor k = 1:K
 
     % Save checkpoint so this seed is not recomputed on restart
     saveCheckpoint(ckptFile, r);
-    results{k} = r;
+    seedResults{ii} = r;
   end
 
   if ~isempty(dq), send(dq, k); end
+end
+
+% Scatter parfor-local seedResults back into the K-sized results cell so
+% downstream aggregation (for k = 1:K) works whether seeds == 1:K or a
+% subset. Slots for seeds NOT in this machine's range stay empty and the
+% existing "if isempty(r), continue" check in the loop below skips them.
+for ii = 1:length(seeds)
+  results{seeds(ii)} = seedResults{ii};
 end
 
 % Assemble results into mc struct
