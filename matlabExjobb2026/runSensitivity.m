@@ -25,7 +25,7 @@
 % Usage:
 %   runSensitivity                 % default K = 50
 %   K = 100; runSensitivity        % override K
-if ~exist('K', 'var'), K = 10; end
+if ~exist('K', 'var'), K = 1; end
 
 % =========================================================================
 % BASELINE TIMING  (must mirror createMatFilesSim defaults)
@@ -127,30 +127,57 @@ for m = methodsCC
 end
 
 % =========================================================================
-% MAIN SWEEP
+% MAIN SWEEP — flat task list parallelised across (param, scaling, seed)
+% so adding workers helps even at small K. The previous design only
+% parallelised the inner K loop and ran the 20 (param,scaling) cells
+% sequentially, which at K=1 left 19/20 workers idle and made the sweep
+% ~20x slower than necessary. The flat parfor produces identical results.
 % =========================================================================
-totalCells = nParams * nScales * K;
-nDone = 0;
+totalTasks = nParams * nScales * K;
+
+% Build flat task list. Each task carries everything the worker needs.
+tasks = cell(totalTasks, 1);
+t_ = 0;
 for pi_ = 1:nParams
+  paramKey_  = paramSweeps{pi_, 1};
+  meanField_ = paramSweeps{pi_, 3};
+  stdField_  = paramSweeps{pi_, 4};
   for si_ = 1:nScales
+    s_ = scalings(si_);
+    to_ = baseline;
+    to_.(meanField_) = (1 - s_) * baseline.(meanField_);
+    to_.(stdField_)  = (1 - s_) * baseline.(stdField_);
     for k_ = 1:K
-      f_ = fullfile(ckptDir, sprintf('%s_s%d_seed_%04d.mat', ...
-        paramSweeps{pi_,1}, si_, k_));
-      if exist(f_, 'file'), nDone = nDone + 1; end
+      t_ = t_ + 1;
+      tasks{t_} = struct( ...
+        'pi',             pi_, ...
+        'si',             si_, ...
+        'k',              k_, ...
+        'paramKey',       paramKey_, ...
+        's',              s_, ...
+        'timingOverride', to_, ...
+        'ckptFile',       fullfile(ckptDir, sprintf('%s_s%d_seed_%04d.mat', ...
+                                                    paramKey_, si_, k_)));
     end
   end
 end
+
+% Count already-completed tasks (for resume reporting)
+nDone = 0;
+for t_ = 1:totalTasks
+  if exist(tasks{t_}.ckptFile, 'file'), nDone = nDone + 1; end
+end
 if nDone > 0
   fprintf('\nResuming: %d/%d iterations already done (found in %s)\n', ...
-    nDone, totalCells, ckptDir);
+    nDone, totalTasks, ckptDir);
 end
 
-fprintf('\nSensitivity sweep: K=%d, %d params x %d scalings = %d MC runs\n\n', ...
-  K, nParams, nScales, nParams*nScales);
+fprintf('\nSensitivity sweep: K=%d, %d params x %d scalings = %d cells, %d total iters\n\n', ...
+  K, nParams, nScales, nParams*nScales, totalTasks);
 tStart = tic;
 
 % Progress counter via DataQueue (parfor-safe; skipped if no PCT).
-% Prints one line per seed completion with cumulative wall time.
+% Prints one line per task completion (out-of-order is expected).
 try
   dq = parallel.pool.DataQueue;
   afterEach(dq, @(msg) fprintf('  [%s s=%.2f] seed %3d %s  (%.0fs elapsed)\n', ...
@@ -159,24 +186,98 @@ catch
   dq = [];
 end
 
-for pi = 1:nParams
-  paramKey   = paramSweeps{pi, 1};
-  meanField  = paramSweeps{pi, 3};
-  stdField   = paramSweeps{pi, 4};
+allResults = cell(totalTasks, 1);
 
+parfor t = 1:totalTasks
+  task = tasks{t};
+  ckptFile = task.ckptFile;
+
+  if exist(ckptFile, 'file')
+    % Already computed — load and skip
+    tmp = load(ckptFile, 'r');
+    allResults{t} = tmp.r;
+    if ~isempty(dq)
+      send(dq, struct('paramKey',task.paramKey,'s',task.s,'k',task.k,'tag','cached'));
+    end
+    continue
+  end
+
+  tk = getCurrentTask();
+  if isempty(tk), wFolder = 'simulatedData';
+  else,           wFolder = fullfile('simulatedData', sprintf('worker_%d', tk.ID));
+  end
+  localSettings = settings;
+  localSettings.dataFolder = wFolder;
+
+  r = struct( ...
+    'PAM_TI',   nan(1,nPeriods), 'PAM_OCI',  nan(1,nPeriods), ...
+    'M1_TI',    nan(1,nPeriods), 'M1_OCI',   nan(1,nPeriods), ...
+    'M2w_TI',   nan(1,nPeriods), 'M2w_OCI',  nan(1,nPeriods), ...
+    'M2m_TI',   nan(1,nPeriods), 'M2m_OCI',  nan(1,nPeriods), ...
+    'M2q_TI',   nan(1,nPeriods), 'M2q_OCI',  nan(1,nPeriods), ...
+    'M1_CC',    nan(1,nPeriods), 'CC_avg',   nan(1,nPeriods), ...
+    'CC_close', nan(1,nPeriods), ...
+    'fBonds',   nan(1,nPeriods), 'fBOM',     nan(1,nPeriods));
+
+  try
+    createMatFilesSim(dm, task.k, false, wFolder, sandvikArrays, task.timingOverride);
+    dc = createDataCompany(dm, localSettings);
+
+    dp = buildPA(dm, dc);
+    dr = performanceAttribution(dm, dc, dp, false);
+    for p = 1:nPeriods
+      idx = quarterIdx{p};
+      if ~isempty(idx)
+        r.PAM_TI(p)  = sum(dr.dFX_trans(idx));
+        r.PAM_OCI(p) = sum(dr.dFX_transl(idx));
+      end
+    end
+
+    bs  = buildBalanceSheet(dm, dc);
+    pnl = buildFunctionalPnL(dm, dc, bs);
+
+    m1 = computeMethod1(dm, dc, '', bs, pnl);
+    r.M1_TI  = m1.TI(:)';
+    r.M1_OCI = m1.OCI(:)';
+
+    m2 = computeMethod2(dm, dc, '', bs, pnl);
+    r.M2w_TI = m2.weekly.TI(:)';     r.M2w_OCI = m2.weekly.OCI(:)';
+    r.M2m_TI = m2.monthly.TI(:)';    r.M2m_OCI = m2.monthly.OCI(:)';
+    r.M2q_TI = m2.quarterly.TI(:)';  r.M2q_OCI = m2.quarterly.OCI(:)';
+
+    P = min(length(m1.cc.M1.quarterly_TI), nPeriods);
+    r.M1_CC(1:P)    = (m1.cc.M1.quarterly_TI(1:P)    + m1.cc.M1.quarterly_OCI(1:P))';
+    r.CC_avg(1:P)   = (m1.cc.avg.quarterly_TI(1:P)   + m1.cc.avg.quarterly_OCI(1:P))';
+    r.CC_close(1:P) = (m1.cc.close.quarterly_TI(1:P) + m1.cc.close.quarterly_OCI(1:P))';
+
+    fcc = performanceAttributionFlowCC(dm, dc, pnl);
+    Pf  = min(length(fcc.bonds.total_quarterly), nPeriods);
+    r.fBonds(1:Pf) = fcc.bonds.total_quarterly(1:Pf)';
+    r.fBOM(1:Pf)   = fcc.BOM.total_quarterly(1:Pf)';
+  catch ME
+    fprintf(2, '\n  task %d (%s s=%.2f seed=%d) ERROR: %s\n', ...
+      t, task.paramKey, task.s, task.k, ME.message);
+  end
+
+  saveCheckpoint(ckptFile, r);
+  allResults{t} = r;
+  if ~isempty(dq)
+    send(dq, struct('paramKey',task.paramKey,'s',task.s,'k',task.k,'tag','done'));
+  end
+end
+
+fprintf('\nAll iterations finished in %.1fs. Aggregating per cell...\n\n', toc(tStart));
+
+% =========================================================================
+% AGGREGATE per (param, scaling) cell -> rmse/me using the flat results.
+% Identical arithmetic to the previous per-cell aggregation step.
+% =========================================================================
+for pi = 1:nParams
+  paramKey = paramSweeps{pi, 1};
   for si = 1:nScales
     s = scalings(si);
+    base = ((pi-1) * nScales + (si-1)) * K;
 
-    % Build timing override (only this param's mean+std are scaled)
-    timingOverride = baseline;
-    timingOverride.(meanField) = (1 - s) * baseline.(meanField);
-    timingOverride.(stdField)  = (1 - s) * baseline.(stdField);
-
-    fprintf('[%s s=%.2f]  mu=%.1f  sigma=%.1f\n', ...
-      paramKey, s, timingOverride.(meanField), timingOverride.(stdField));
-    tCell = tic;
-
-    % Pre-allocate per-iteration storage [K x nPeriods]
     PAM_TI   = nan(K, nPeriods);
     PAM_OCI  = nan(K, nPeriods);
     M1_TI    = nan(K, nPeriods);   M1_OCI   = nan(K, nPeriods);
@@ -189,94 +290,8 @@ for pi = 1:nParams
     fBonds   = nan(K, nPeriods);
     fBOM     = nan(K, nPeriods);
 
-    % Inner MC loop
-    iterResults = cell(K, 1);
-    ckptDirLocal  = ckptDir;
-    paramKeyLocal = paramKey;
-    siLocal       = si;
-    sLocal        = s;
-    dqLocal       = dq;
-    parfor k = 1:K
-      ckptFile = fullfile(ckptDirLocal, sprintf('%s_s%d_seed_%04d.mat', ...
-        paramKeyLocal, siLocal, k));
-
-      if exist(ckptFile, 'file')
-        % Already computed — load and skip
-        tmp = load(ckptFile, 'r');
-        iterResults{k} = tmp.r;
-        if ~isempty(dqLocal)
-          send(dqLocal, struct('paramKey',paramKeyLocal,'s',sLocal,'k',k,'tag','cached'));
-        end
-        continue
-      end
-
-      tk = getCurrentTask();
-      if isempty(tk), wFolder = 'simulatedData';
-      else,           wFolder = fullfile('simulatedData', sprintf('worker_%d', tk.ID));
-      end
-      localSettings = settings;
-      localSettings.dataFolder = wFolder;
-
-      r = struct( ...
-        'PAM_TI',   nan(1,nPeriods), 'PAM_OCI',  nan(1,nPeriods), ...
-        'M1_TI',    nan(1,nPeriods), 'M1_OCI',   nan(1,nPeriods), ...
-        'M2w_TI',   nan(1,nPeriods), 'M2w_OCI',  nan(1,nPeriods), ...
-        'M2m_TI',   nan(1,nPeriods), 'M2m_OCI',  nan(1,nPeriods), ...
-        'M2q_TI',   nan(1,nPeriods), 'M2q_OCI',  nan(1,nPeriods), ...
-        'M1_CC',    nan(1,nPeriods), 'CC_avg',   nan(1,nPeriods), ...
-        'CC_close', nan(1,nPeriods), ...
-        'fBonds',   nan(1,nPeriods), 'fBOM',     nan(1,nPeriods));
-
-      try
-        createMatFilesSim(dm, k, false, wFolder, sandvikArrays, timingOverride);
-        dc = createDataCompany(dm, localSettings);
-
-        dp = buildPA(dm, dc);
-        dr = performanceAttribution(dm, dc, dp, false);
-        for p = 1:nPeriods
-          idx = quarterIdx{p};
-          if ~isempty(idx)
-            r.PAM_TI(p)  = sum(dr.dFX_trans(idx));
-            r.PAM_OCI(p) = sum(dr.dFX_transl(idx));
-          end
-        end
-
-        bs  = buildBalanceSheet(dm, dc);
-        pnl = buildFunctionalPnL(dm, dc, bs);
-
-        m1 = computeMethod1(dm, dc, '', bs, pnl);
-        r.M1_TI  = m1.TI(:)';
-        r.M1_OCI = m1.OCI(:)';
-
-        m2 = computeMethod2(dm, dc, '', bs, pnl);
-        r.M2w_TI = m2.weekly.TI(:)';     r.M2w_OCI = m2.weekly.OCI(:)';
-        r.M2m_TI = m2.monthly.TI(:)';    r.M2m_OCI = m2.monthly.OCI(:)';
-        r.M2q_TI = m2.quarterly.TI(:)';  r.M2q_OCI = m2.quarterly.OCI(:)';
-
-        P = min(length(m1.cc.M1.quarterly_TI), nPeriods);
-        r.M1_CC(1:P)    = (m1.cc.M1.quarterly_TI(1:P)    + m1.cc.M1.quarterly_OCI(1:P))';
-        r.CC_avg(1:P)   = (m1.cc.avg.quarterly_TI(1:P)   + m1.cc.avg.quarterly_OCI(1:P))';
-        r.CC_close(1:P) = (m1.cc.close.quarterly_TI(1:P) + m1.cc.close.quarterly_OCI(1:P))';
-
-        fcc = performanceAttributionFlowCC(dm, dc, pnl);
-        Pf  = min(length(fcc.bonds.total_quarterly), nPeriods);
-        r.fBonds(1:Pf) = fcc.bonds.total_quarterly(1:Pf)';
-        r.fBOM(1:Pf)   = fcc.BOM.total_quarterly(1:Pf)';
-      catch ME
-        fprintf(2, '\n  iter %d ERROR: %s\n', k, ME.message);
-      end
-
-      % Save checkpoint so this (param, scaling, seed) is not recomputed on restart
-      saveCheckpoint(ckptFile, r);
-      iterResults{k} = r;
-      if ~isempty(dqLocal)
-        send(dqLocal, struct('paramKey',paramKeyLocal,'s',sLocal,'k',k,'tag','done'));
-      end
-    end
-
-    % Assemble per-method matrices
     for k = 1:K
-      r = iterResults{k};
+      r = allResults{base + k};
       if isempty(r), continue; end
       PAM_TI(k,:)   = r.PAM_TI;    PAM_OCI(k,:)  = r.PAM_OCI;
       M1_TI(k,:)    = r.M1_TI;     M1_OCI(k,:)   = r.M1_OCI;
@@ -290,41 +305,30 @@ for pi = 1:nParams
       fBOM(k,:)     = r.fBOM;
     end
 
-    % Valid mask: drop iterations with any NaN in critical benchmarks
     valid = ~any(isnan(PAM_TI),2) & ~any(isnan(PAM_OCI),2) & ...
             ~any(isnan(M1_TI),2)  & ~any(isnan(M2m_TI),2) & ...
             ~any(isnan(fBOM),2);
 
-    % Error helpers — flattened across (valid iterations) x (all quarters)
     rmse = @(A,B) sqrt(mean((A(valid,:) - B(valid,:)).^2, 'all'));
     me   = @(A,B) mean(A(valid,:) - B(valid,:), 'all');
 
-    % TI errors (benchmark: PAM_TI = FX_trans, bonds-only)
     results.rmse_TI.M1(pi,si)  = rmse(PAM_TI, M1_TI);   results.me_TI.M1(pi,si)  = me(PAM_TI, M1_TI);
     results.rmse_TI.M2w(pi,si) = rmse(PAM_TI, M2w_TI);  results.me_TI.M2w(pi,si) = me(PAM_TI, M2w_TI);
     results.rmse_TI.M2m(pi,si) = rmse(PAM_TI, M2m_TI);  results.me_TI.M2m(pi,si) = me(PAM_TI, M2m_TI);
     results.rmse_TI.M2q(pi,si) = rmse(PAM_TI, M2q_TI);  results.me_TI.M2q(pi,si) = me(PAM_TI, M2q_TI);
 
-    % OCI errors (benchmark: PAM_OCI = FX_transl)
     results.rmse_OCI.M1(pi,si)  = rmse(PAM_OCI, M1_OCI);   results.me_OCI.M1(pi,si)  = me(PAM_OCI, M1_OCI);
     results.rmse_OCI.M2w(pi,si) = rmse(PAM_OCI, M2w_OCI);  results.me_OCI.M2w(pi,si) = me(PAM_OCI, M2w_OCI);
     results.rmse_OCI.M2m(pi,si) = rmse(PAM_OCI, M2m_OCI);  results.me_OCI.M2m(pi,si) = me(PAM_OCI, M2m_OCI);
     results.rmse_OCI.M2q(pi,si) = rmse(PAM_OCI, M2q_OCI);  results.me_OCI.M2q(pi,si) = me(PAM_OCI, M2q_OCI);
 
-    % CC errors (benchmark: fBOM = PAM BOM flow CC)
     results.rmse_CC.M1_CC(pi,si)     = rmse(fBOM, M1_CC);    results.me_CC.M1_CC(pi,si)     = me(fBOM, M1_CC);
     results.rmse_CC.CC_avg(pi,si)    = rmse(fBOM, CC_avg);   results.me_CC.CC_avg(pi,si)    = me(fBOM, CC_avg);
     results.rmse_CC.CC_close(pi,si)  = rmse(fBOM, CC_close); results.me_CC.CC_close(pi,si)  = me(fBOM, CC_close);
     results.rmse_CC.PAM_bonds(pi,si) = rmse(fBOM, fBonds);   results.me_CC.PAM_bonds(pi,si) = me(fBOM, fBonds);
 
-    cellsDone   = (pi-1)*nScales + si;
-    cellsTotal  = nParams * nScales;
-    elapsedTot  = toc(tStart);
-    avgCellTime = elapsedTot / cellsDone;
-    etaSec      = avgCellTime * (cellsTotal - cellsDone);
-    fprintf(['[%s s=%.2f] cell done in %.0fs | total %.0fs | ETA %.0fs (cell %d/%d) | ' ...
-             'RMSE TI/M1=%.1fM  OCI/M1=%.1fM  CC/M1=%.1fM  CC/bonds=%.1fM\n'], ...
-      paramKey, s, toc(tCell), elapsedTot, etaSec, cellsDone, cellsTotal, ...
+    fprintf(['[%s s=%.2f] RMSE TI/M1=%.1fM  OCI/M1=%.1fM  CC/M1=%.1fM  CC/bonds=%.1fM\n'], ...
+      paramKey, s, ...
       results.rmse_TI.M1(pi,si)/1e6, results.rmse_OCI.M1(pi,si)/1e6, ...
       results.rmse_CC.M1_CC(pi,si)/1e6, results.rmse_CC.PAM_bonds(pi,si)/1e6);
   end
