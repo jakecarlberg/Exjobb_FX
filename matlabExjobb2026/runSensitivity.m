@@ -523,7 +523,9 @@ cCCavg = [0.60 0.40 0.12];  % brown
 cCCcls = [0.84 0.19 0.87];  % pink
 
 % Set up figures folder matching runMC convention
-figDir = fullfile(pwd, 'figures');
+% All sensitivity-run figures go under figures/sensitivity/ so they don't
+% mix with the runMC outputs that share the same figures/ root.
+figDir = fullfile(pwd, 'figures', 'sensitivity');
 if ~exist(figDir, 'dir'), mkdir(figDir); end
 
 for pi = 1:nParams

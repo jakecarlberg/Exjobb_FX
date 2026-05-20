@@ -29,7 +29,9 @@ function postprocessSensitivity(ckptDir, figDir)
 % by re-running this script after a single (slow) runSensitivity run.
 
 if nargin < 1 || isempty(ckptDir), ckptDir = 'sensitivity_checkpoints'; end
-if nargin < 2 || isempty(figDir),  figDir  = 'figures';                 end
+% Default output: figures/sensitivity/ so the 19 PDFs don't mix with
+% runMC's baseline outputs that share the figures/ root.
+if nargin < 2 || isempty(figDir),  figDir  = fullfile('figures', 'sensitivity'); end
 if ~exist(figDir, 'dir'), mkdir(figDir); end
 
 % =========================================================================
