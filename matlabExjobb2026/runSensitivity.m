@@ -27,6 +27,33 @@
 %   K = 100; runSensitivity        % override K
 if ~exist('K', 'var'), K = 1; end
 
+% -------------------------------------------------------------------------
+% DISTRIBUTED RUN — optional, leave commented out to run all seeds locally
+% -------------------------------------------------------------------------
+% To run a single machine over ALL seeds 1:K for every (param, scaling)
+% cell (default), leave the line below commented out. To split the
+% workload across multiple machines, uncomment and set `seeds` to the
+% seed range this machine should handle (applied across all 20 cells).
+% Example for two machines splitting K=1000:
+%
+%   Machine A:  seeds = 1:500;        % first half  -> 20 * 500 = 10000 tasks
+%   Machine B:  seeds = 501:1000;     % second half -> 20 * 500 = 10000 tasks
+%
+% Both machines must write checkpoints into the same
+% `sensitivity_checkpoints/` folder (network share, OneDrive, etc.) or
+% have their folders merged before final aggregation. Filenames embed the
+% seed number, so there is no collision between machines.
+%
+% The in-script RMSE/ME tables at the end only count THIS machine's seeds.
+% To get the combined statistics across both halves, copy/merge all
+% checkpoint .mat files into one folder and re-run runSensitivity with
+% `seeds` UNSET (use `clear seeds` first). Every task will skip via the
+% existing "checkpoint exists" path, then aggregation runs over 1:K.
+%
+% seeds = 1:500;    %  <-- uncomment and edit this line to split work
+% -------------------------------------------------------------------------
+if ~exist('seeds', 'var'), seeds = 1:K; end
+
 % =========================================================================
 % BASELINE TIMING  (must mirror createMatFilesSim defaults)
 % =========================================================================
@@ -162,18 +189,35 @@ for pi_ = 1:nParams
   end
 end
 
-% Count already-completed tasks (for resume reporting)
-nDone = 0;
+% Build the list of task indices this machine handles. If `seeds` covers
+% all of 1:K, this is just 1:totalTasks. Otherwise it filters to the
+% (param,scaling) x seeds subset — same skip pattern as runMC.
+runIdx = zeros(0, 1);
 for t_ = 1:totalTasks
-  if exist(tasks{t_}.ckptFile, 'file'), nDone = nDone + 1; end
+  if any(tasks{t_}.k == seeds), runIdx(end+1, 1) = t_; end %#ok<SAGROW>
+end
+nRun = length(runIdx);
+
+% Count already-completed tasks (for resume reporting). Scoped to THIS
+% machine's runIdx so the message reflects this machine's progress.
+nDone = 0;
+for ii_ = 1:nRun
+  if exist(tasks{runIdx(ii_)}.ckptFile, 'file'), nDone = nDone + 1; end
 end
 if nDone > 0
   fprintf('\nResuming: %d/%d iterations already done (found in %s)\n', ...
-    nDone, totalTasks, ckptDir);
+    nDone, nRun, ckptDir);
 end
 
-fprintf('\nSensitivity sweep: K=%d, %d params x %d scalings = %d cells, %d total iters\n\n', ...
-  K, nParams, nScales, nParams*nScales, totalTasks);
+if isequal(seeds, 1:K)
+  fprintf('\nSensitivity sweep: K=%d, %d params x %d scalings = %d cells, %d total iters\n\n', ...
+    K, nParams, nScales, nParams*nScales, totalTasks);
+else
+  fprintf(['\nSensitivity sweep: K=%d total, this machine runs seeds %d:%d ' ...
+           '(%d per cell), %d params x %d scalings = %d cells, %d iters here\n\n'], ...
+    K, min(seeds), max(seeds), length(seeds), nParams, nScales, ...
+    nParams*nScales, nRun);
+end
 tStart = tic;
 
 % Progress counter via DataQueue (parfor-safe; skipped if no PCT).
@@ -186,16 +230,22 @@ catch
   dq = [];
 end
 
+% Indexed by ii (1..nRun) inside parfor so the slicing classifier works;
+% scattered back into the totalTasks-sized allResults after the parfor so
+% the per-cell aggregation below (which uses the linear (pi,si,k) index)
+% keeps working whether seeds == 1:K or a subset.
 allResults = cell(totalTasks, 1);
+runResults = cell(nRun, 1);
 
-parfor t = 1:totalTasks
+parfor ii = 1:nRun
+  t = runIdx(ii);
   task = tasks{t};
   ckptFile = task.ckptFile;
 
   if exist(ckptFile, 'file')
     % Already computed — load and skip
     tmp = load(ckptFile, 'r');
-    allResults{t} = tmp.r;
+    runResults{ii} = tmp.r;
     if ~isempty(dq)
       send(dq, struct('paramKey',task.paramKey,'s',task.s,'k',task.k,'tag','cached'));
     end
@@ -260,10 +310,19 @@ parfor t = 1:totalTasks
   end
 
   saveCheckpoint(ckptFile, r);
-  allResults{t} = r;
+  runResults{ii} = r;
   if ~isempty(dq)
     send(dq, struct('paramKey',task.paramKey,'s',task.s,'k',task.k,'tag','done'));
   end
+end
+
+% Scatter parfor-local runResults back into the full-size allResults so
+% the per-cell aggregation below can use the linear (pi,si,k) index. If
+% seeds covers all of 1:K, this fills allResults completely; otherwise
+% slots outside this machine's seeds stay empty and the `if isempty(r),
+% continue` check in the aggregation loop skips them.
+for ii = 1:nRun
+  allResults{runIdx(ii)} = runResults{ii};
 end
 
 fprintf('\nAll iterations finished in %.1fs. Aggregating per cell...\n\n', toc(tStart));
