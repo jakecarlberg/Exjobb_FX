@@ -460,6 +460,10 @@ if ~exist(figDir, 'dir')
   if ~ok, error('Could not create figures folder: %s', msg); end
 end
 
+% Dock all figures as tabs in a single MATLAB Figures container so they
+% don't pop up as ~20 separate windows. The PDFs still save normally.
+set(0, 'DefaultFigureWindowStyle', 'docked');
+
 % Plot colors (used throughout all figures)
 cPAM   = [0.12 0.47 0.71];  % blue   — PAM bonds
 cM1    = [0.89 0.10 0.11];  % red    — Method 1
@@ -521,7 +525,7 @@ if ~isempty(ss_targets) && nValValid > 0
   fprintf('%s\n', repmat('-', 1, 38));
 
   % --- Figure 29: Revenue and GM validation ---------------------------------
-  fig = figure('Visible','off');
+  fig = figure();
   subplot(2,1,1);
   hold on;
   fill([simYrs, fliplr(simYrs)], [meanRev-stdRev, fliplr(meanRev+stdRev)], ...
@@ -912,7 +916,7 @@ saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 % =========================================================================
 
 % --- Figure 24: TI per-quarter std — PAM bonds benchmark ------------------
-fig = figure('Visible','off'); hold on;
+fig = figure(); hold on;
 stdHist(gca, err_TI_M1,  'PAM bonds vs M1',          cM1);
 stdHist(gca, err_TI_M2w, 'PAM bonds vs M2 weekly',   cM2w);
 stdHist(gca, err_TI_M2m, 'PAM bonds vs M2 monthly',  cM2m);
@@ -923,7 +927,7 @@ formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bonds.pdf'));
 
 % --- Figure 25: TI per-quarter std — PAM bonds+BOM benchmark --------------
-fig = figure('Visible','off'); hold on;
+fig = figure(); hold on;
 stdHist(gca, err_BOM_TI_M1,  'PAM bonds+BOM vs M1',          cM1);
 stdHist(gca, err_BOM_TI_M2w, 'PAM bonds+BOM vs M2 weekly',   cM2w);
 stdHist(gca, err_BOM_TI_M2m, 'PAM bonds+BOM vs M2 monthly',  cM2m);
@@ -934,7 +938,7 @@ formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bom.pdf'));
 
 % --- Figure 26: OCI per-quarter std ----------------------------------------
-fig = figure('Visible','off'); hold on;
+fig = figure(); hold on;
 stdHist(gca, err_OCI_M1,  'PAM vs M1',          cM1);
 stdHist(gca, err_OCI_M2w, 'PAM vs M2 weekly',   cM2w);
 stdHist(gca, err_OCI_M2m, 'PAM vs M2 monthly',  cM2m);
@@ -945,7 +949,7 @@ formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_std_hist.pdf'));
 
 % --- Figure 27: CC per-quarter std — PAM BOM benchmark --------------------
-fig = figure('Visible','off'); hold on;
+fig = figure(); hold on;
 stdHist(gca, err_BOM_M1,    'PAM BOM vs M1 CC',    cM1);
 stdHist(gca, err_BOM_avg,   'PAM BOM vs CC avg',   cCCavg);
 stdHist(gca, err_BOM_close, 'PAM BOM vs CC close', cCCcls);
@@ -955,7 +959,7 @@ formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bom.pdf'));
 
 % --- Figure 28: CC per-quarter std — PAM bonds benchmark ------------------
-fig = figure('Visible','off'); hold on;
+fig = figure(); hold on;
 stdHist(gca, err_bonds_M1,    'PAM bonds vs M1 CC',    cM1);
 stdHist(gca, err_bonds_avg,   'PAM bonds vs CC avg',   cCCavg);
 stdHist(gca, err_bonds_close, 'PAM bonds vs CC close', cCCcls);
