@@ -21,7 +21,7 @@
 % =========================================================================
 % SETTINGS
 % =========================================================================
-if ~exist('K',    'var'), K    = 100; end
+if ~exist('K',    'var'), K    = 1000; end
 
 % -------------------------------------------------------------------------
 % DISTRIBUTED RUN — optional, leave commented out to run all seeds locally
@@ -462,6 +462,13 @@ end
 
 % Dock all figures as tabs in a single MATLAB Figures container so they
 % don't pop up as ~20 separate windows. The PDFs still save normally.
+%
+% NOTE: figure(N) re-uses the existing figure with handle N if one already
+% exists, KEEPING its current WindowStyle (so an old undocked figure 10
+% from a previous runMC call stays undocked even after we change the
+% default). Closing all figures here makes the new default actually apply
+% to every figure runMC creates below.
+close all
 set(0, 'DefaultFigureWindowStyle', 'docked');
 
 % Plot colors (used throughout all figures)
@@ -530,8 +537,8 @@ if ~isempty(ss_targets) && nValValid > 0
   hold on;
   fill([simYrs, fliplr(simYrs)], [meanRev-stdRev, fliplr(meanRev+stdRev)], ...
     cPAM, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-  plot(simYrs, meanRev, '-o', 'Color', cPAM, 'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'Simulated (mean±std)');
-  plot(simYrs, tgtRev,  '--k', 'LineWidth', 1.2, 'DisplayName', 'Target');
+  plot(simYrs, meanRev, '-o', 'Color', cPAM, 'LineWidth', 1.1, 'MarkerSize', 3, 'DisplayName', 'Simulated (mean±std)');
+  plot(simYrs, tgtRev,  '--k', 'LineWidth', 0.9, 'DisplayName', 'Target');
   ylabel('Revenue (MEUR)'); legend('Location','Best'); grid on;
   title('Revenue: simulated vs target');
 
@@ -539,8 +546,8 @@ if ~isempty(ss_targets) && nValValid > 0
   hold on;
   fill([simYrs, fliplr(simYrs)], [meanGM-stdGM, fliplr(meanGM+stdGM)], ...
     cPAM, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-  plot(simYrs, meanGM, '-o', 'Color', cPAM, 'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'Simulated (mean±std)');
-  plot(simYrs, tgtGM,  '--k', 'LineWidth', 1.2, 'DisplayName', 'Target');
+  plot(simYrs, meanGM, '-o', 'Color', cPAM, 'LineWidth', 1.1, 'MarkerSize', 3, 'DisplayName', 'Simulated (mean±std)');
+  plot(simYrs, tgtGM,  '--k', 'LineWidth', 0.9, 'DisplayName', 'Target');
   ylabel('Gross Margin (%)'); xlabel('Year'); legend('Location','Best'); grid on;
   title('Gross margin: simulated vs target');
   formatFig(fig, 16, 12);
@@ -643,12 +650,12 @@ err_BOM_TI_M2q = (M2q_TI_q - PAM_TI_BOM_q) / 1e6;
 
 % --- Figure 10: TI mean per quarter ---------------------------------------
 fig = figure(10); clf; hold on;
-plot(qx, mu(PAM_TI_q),     '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(qx, mu(PAM_TI_BOM_q), '--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM');
-plot(qx, mu(M1_TI_q),      '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, mu(M2w_TI_q),     '-o',  'Color',cM2w,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 weekly');
-plot(qx, mu(M2m_TI_q),     '-o',  'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-plot(qx, mu(M2q_TI_q),     '-o',  'Color',cM2q,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 quarterly');
+plot(qx, mu(PAM_TI_q),     '-o',  'Color',cPAM,'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(qx, mu(PAM_TI_BOM_q), '--s', 'Color',cPAM,'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds+BOM');
+plot(qx, mu(M1_TI_q),      '-o',  'Color',cM1, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1');
+plot(qx, mu(M2w_TI_q),     '-o',  'Color',cM2w,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 weekly');
+plot(qx, mu(M2m_TI_q),     '-o',  'Color',cM2m,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 monthly');
+plot(qx, mu(M2q_TI_q),     '-o',  'Color',cM2q,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 quarterly');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('TI — mean per quarter'); legend('Location','Best'); grid on;
@@ -657,12 +664,12 @@ saveas(fig, fullfile(figDir,'TI_actual.pdf'));
 
 % --- Figure 11: TI cumulative ---------------------------------------------
 fig = figure(11); clf; hold on;
-plot(qx, cumsum(mu(PAM_TI_q)),     '-o',  'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(qx, cumsum(mu(PAM_TI_BOM_q)), '--s', 'Color',cPAM,'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds+BOM');
-plot(qx, cumsum(mu(M1_TI_q)),      '-o',  'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, cumsum(mu(M2w_TI_q)),     '-o',  'Color',cM2w,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 weekly');
-plot(qx, cumsum(mu(M2m_TI_q)),     '-o',  'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-plot(qx, cumsum(mu(M2q_TI_q)),     '-o',  'Color',cM2q,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 quarterly');
+plot(qx, cumsum(mu(PAM_TI_q)),     '-o',  'Color',cPAM,'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(qx, cumsum(mu(PAM_TI_BOM_q)), '--s', 'Color',cPAM,'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds+BOM');
+plot(qx, cumsum(mu(M1_TI_q)),      '-o',  'Color',cM1, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1');
+plot(qx, cumsum(mu(M2w_TI_q)),     '-o',  'Color',cM2w,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 weekly');
+plot(qx, cumsum(mu(M2m_TI_q)),     '-o',  'Color',cM2m,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 monthly');
+plot(qx, cumsum(mu(M2q_TI_q)),     '-o',  'Color',cM2q,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 quarterly');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('TI — cumulative'); legend('Location','Best'); grid on;
@@ -737,11 +744,11 @@ err_OCI_M2q = (M2q_OCI_q - PAM_OCI_q) / 1e6;
 
 % --- Figure 15: OCI mean per quarter --------------------------------------
 fig = figure(15); clf; hold on;
-plot(qx, mu(PAM_OCI_q),  '-o', 'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
-plot(qx, mu(M1_OCI_q),   '-o', 'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, mu(M2w_OCI_q),  '-o', 'Color',cM2w,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 weekly');
-plot(qx, mu(M2m_OCI_q),  '-o', 'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-plot(qx, mu(M2q_OCI_q),  '-o', 'Color',cM2q,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 quarterly');
+plot(qx, mu(PAM_OCI_q),  '-o', 'Color',cPAM,'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM');
+plot(qx, mu(M1_OCI_q),   '-o', 'Color',cM1, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1');
+plot(qx, mu(M2w_OCI_q),  '-o', 'Color',cM2w,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 weekly');
+plot(qx, mu(M2m_OCI_q),  '-o', 'Color',cM2m,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 monthly');
+plot(qx, mu(M2q_OCI_q),  '-o', 'Color',cM2q,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 quarterly');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('OCI — mean per quarter'); legend('Location','Best'); grid on;
@@ -750,11 +757,11 @@ saveas(fig, fullfile(figDir,'OCI_actual.pdf'));
 
 % --- Figure 16: OCI cumulative --------------------------------------------
 fig = figure(16); clf; hold on;
-plot(qx, cumsum(mu(PAM_OCI_q)),  '-o', 'Color',cPAM,'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM');
-plot(qx, cumsum(mu(M1_OCI_q)),   '-o', 'Color',cM1, 'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1');
-plot(qx, cumsum(mu(M2w_OCI_q)),  '-o', 'Color',cM2w,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 weekly');
-plot(qx, cumsum(mu(M2m_OCI_q)),  '-o', 'Color',cM2m,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 monthly');
-plot(qx, cumsum(mu(M2q_OCI_q)),  '-o', 'Color',cM2q,'LineWidth',1.8,'MarkerSize',4,'DisplayName','M2 quarterly');
+plot(qx, cumsum(mu(PAM_OCI_q)),  '-o', 'Color',cPAM,'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM');
+plot(qx, cumsum(mu(M1_OCI_q)),   '-o', 'Color',cM1, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1');
+plot(qx, cumsum(mu(M2w_OCI_q)),  '-o', 'Color',cM2w,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 weekly');
+plot(qx, cumsum(mu(M2m_OCI_q)),  '-o', 'Color',cM2m,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 monthly');
+plot(qx, cumsum(mu(M2q_OCI_q)),  '-o', 'Color',cM2q,'LineWidth',1.3,'MarkerSize',3,'DisplayName','M2 quarterly');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',qx,'XTickLabel',xTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('OCI — cumulative'); legend('Location','Best'); grid on;
@@ -856,11 +863,11 @@ err_bonds_close = (CC_close_cc - fBonds_cc) / 1e6;
 
 % --- Figure 19: CC mean per quarter (2008+) --------------------------------
 fig = figure(19); clf; hold on;
-plot(ccQx, mu(fBOM_cc),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
-plot(ccQx, mu(fBonds_cc),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(ccQx, mu(M1_CC_cc),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
-plot(ccQx, mu(CC_avg_cc),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
-plot(ccQx, mu(CC_close_cc), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+plot(ccQx, mu(fBOM_cc),     '-o',  'Color',cPAM,  'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM BOM');
+plot(ccQx, mu(fBonds_cc),   '--s', 'Color',cPAM,  'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(ccQx, mu(M1_CC_cc),    '-o',  'Color',cM1,   'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
+plot(ccQx, mu(CC_avg_cc),   '-o',  'Color',cCCavg,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
+plot(ccQx, mu(CC_close_cc), '-o',  'Color',cCCcls,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('CC — mean per quarter'); legend('Location','Best'); grid on;
@@ -869,11 +876,11 @@ saveas(fig, fullfile(figDir,'CC_actual.pdf'));
 
 % --- Figure 20: CC cumulative (2008+) -------------------------------------
 fig = figure(20); clf; hold on;
-plot(ccQx, cumsum(mu(fBOM_cc)),     '-o',  'Color',cPAM,  'LineWidth',1.8,'MarkerSize',4,'DisplayName','PAM BOM');
-plot(ccQx, cumsum(mu(fBonds_cc)),   '--s', 'Color',cPAM,  'LineWidth',1.2,'MarkerSize',4,'DisplayName','PAM bonds');
-plot(ccQx, cumsum(mu(M1_CC_cc)),    '-o',  'Color',cM1,   'LineWidth',1.8,'MarkerSize',4,'DisplayName','M1 CC');
-plot(ccQx, cumsum(mu(CC_avg_cc)),   '-o',  'Color',cCCavg,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC avg');
-plot(ccQx, cumsum(mu(CC_close_cc)), '-o',  'Color',cCCcls,'LineWidth',1.8,'MarkerSize',4,'DisplayName','CC close');
+plot(ccQx, cumsum(mu(fBOM_cc)),     '-o',  'Color',cPAM,  'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM BOM');
+plot(ccQx, cumsum(mu(fBonds_cc)),   '--s', 'Color',cPAM,  'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(ccQx, cumsum(mu(M1_CC_cc)),    '-o',  'Color',cM1,   'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
+plot(ccQx, cumsum(mu(CC_avg_cc)),   '-o',  'Color',cCCavg,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
+plot(ccQx, cumsum(mu(CC_close_cc)), '-o',  'Color',cCCcls,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million'); title('CC — cumulative'); legend('Location','Best'); grid on;
@@ -1005,7 +1012,7 @@ function plotSilvermanKDE(ax, e, lbl, col)
   s  = std(e);
   h  = 0.9 * min(s, iqr(e)/1.34) * N^(-1/5);
   [f, xi] = ksdensity(e, 'Bandwidth', h);
-  plot(ax, xi, f, 'Color', col, 'LineWidth', 1.8, 'DisplayName', lbl);
+  plot(ax, xi, f, 'Color', col, 'LineWidth', 1.3, 'DisplayName', lbl);
 end
 
 function saveCheckpoint(fname, r) %#ok<INUSD>
@@ -1021,14 +1028,19 @@ function stdHist(ax, e, lbl, col)
   [counts, edges] = histcounts(s, 10);
   % Append final edge at zero so the last bar closes properly
   stairs(ax, [edges(1:end-1), edges(end)], [counts, 0], ...
-    'Color', col, 'LineWidth', 2, 'DisplayName', lbl);
+    'Color', col, 'LineWidth', 1.5, 'DisplayName', lbl);
 end
 
 function formatFig(fig, w, h)
 % Set figure to exact physical size and apply consistent typography to all axes.
 % Uses -depth 1 to restrict to direct children of the figure, avoiding
 % hidden internal axes created by boxplot (which would corrupt outlier colors).
-  set(fig, 'Units','centimeters', 'Position',[0 0 w h]);
+%
+% Force-dock the figure here so every figure in runMC ends up as a tab in
+% the MATLAB Figures container regardless of whether the WindowStyle
+% default was honored at creation. Position is only set if undocked
+% (MATLAB warns when trying to set Position on a docked figure).
+  set(fig, 'WindowStyle', 'docked');
   set(fig, 'PaperUnits','centimeters', 'PaperSize',[w h], ...
            'PaperPosition',[0 0 w h], 'PaperPositionMode','manual');
   allAx = findobj(fig, '-depth', 1, 'Type', 'axes');
