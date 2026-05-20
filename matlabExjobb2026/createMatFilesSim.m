@@ -120,6 +120,15 @@ mfgMean      = 30;  mfgStd      =  5;   % days: manufacturing duration
 custPayMean  = 45;  custPayStd  = 15;   % days: customer payment delay
 suppPayMean  = 60;  suppPayStd  = 15;   % days: supplier payment delay
 
+% Per-parameter floor on the random draw (max(floor, ...) below). Defaults
+% are "realism" minimums; runSensitivity overrides them to 1 so that s=1
+% (mean+std collapsed to zero) actually produces near-zero windows instead
+% of bottoming out at the realism floor.
+procLeadMin = 5;
+mfgMin      = 1;
+custPayMin  = 7;
+suppPayMin  = 1;
+
 % Apply runSensitivity overrides (field-by-field; absent fields keep baseline)
 if ~isempty(timingOverride)
   if isfield(timingOverride, 'procLeadMean'), procLeadMean = timingOverride.procLeadMean; end
@@ -130,6 +139,10 @@ if ~isempty(timingOverride)
   if isfield(timingOverride, 'custPayStd'),   custPayStd   = timingOverride.custPayStd;   end
   if isfield(timingOverride, 'suppPayMean'),  suppPayMean  = timingOverride.suppPayMean;  end
   if isfield(timingOverride, 'suppPayStd'),   suppPayStd   = timingOverride.suppPayStd;   end
+  if isfield(timingOverride, 'procLeadMin'),  procLeadMin  = timingOverride.procLeadMin;  end
+  if isfield(timingOverride, 'mfgMin'),       mfgMin       = timingOverride.mfgMin;       end
+  if isfield(timingOverride, 'custPayMin'),   custPayMin   = timingOverride.custPayMin;   end
+  if isfield(timingOverride, 'suppPayMin'),   suppPayMin   = timingOverride.suppPayMin;   end
 end
 
 %% ========================================================================
@@ -436,9 +449,12 @@ for y = 1:nYears
   % bufferEnd: last year — customer payment must not exceed dm.dates(end).
   %   Must accommodate the full post-mfgStart lifecycle:
   %   mfgDays (3-sigma) + invoiceLag (max 3) + custPay (3-sigma) + slack.
-  bufferStart = procLeadMean + 3*procLeadStd + mfgMean + 3*mfgStd + 10;
-  procBuf     = procLeadMean + 3*procLeadStd;
-  bufferEnd   = mfgMean + 3*mfgStd + 3 + custPayMean + 3*custPayStd + 10;   % +3 for invoiceLag
+  % Buffers must be integers because they end up as iValidStart/iValidEnd
+  % offsets fed into randi. Scaled (1-s) * baseline values produce non-integers
+  % for s = 0.25/0.5/0.75 even when the baseline is integer, so round here.
+  bufferStart = round(procLeadMean + 3*procLeadStd + mfgMean + 3*mfgStd + 10);
+  procBuf     = round(procLeadMean + 3*procLeadStd);
+  bufferEnd   = round(mfgMean + 3*mfgStd + 3 + custPayMean + 3*custPayStd + 10);   % +3 for invoiceLag
 
   iYearStart = yearStartIdx(y);
   iYearEnd   = yearEndIdx(y);
@@ -496,7 +512,7 @@ for y = 1:nYears
     %   Manufacturing begins on the day components arrive (no planning buffer).
     %   This preserves the invariant procDeliveryDate == mfgStart that the PAM
     %   bond accounting in createDataCompany / buildPA assumes.
-    mfgDays   = max(1, round(mfgMean + mfgStd * randn()));
+    mfgDays   = max(mfgMin, round(mfgMean + mfgStd * randn()));
     iMfgStart = bomStartInds(i);
     iMfgEnd   = min(nDates, iMfgStart + mfgDays);
     mfgStart  = allDates(iMfgStart);
@@ -526,7 +542,7 @@ for y = 1:nYears
     revenueSale = revenueEUR * fxEURtoSale;
 
     % Customer payment timing
-    custPay     = max(7, round(custPayMean + custPayStd * randn()));
+    custPay     = max(custPayMin, round(custPayMean + custPayStd * randn()));
     invoiceLag  = 0;               % no buffer — invoice sent same day mfg completes
     invoiceDate = mfgFinish + invoiceLag;
     % Snap invoiceDate to next trading day (weekend + holiday safe)
@@ -587,7 +603,7 @@ for y = 1:nYears
       bomRowId = bomRowId + 1;
 
       % Procurement timing
-      procLead         = max(5, round(procLeadMean + procLeadStd * randn()));
+      procLead         = max(procLeadMin, round(procLeadMean + procLeadStd * randn()));
       iProcDate        = max(2, iMfgStart - procLead);   % PO placed procLead days before mfg starts
       procDate         = allDates(iProcDate);            % order date (PO placed)
       procDeliveryDate = mfgStart;                       % components arrive at mfgStart (no inventory buffer)
@@ -596,7 +612,7 @@ for y = 1:nYears
       productOrderDate(productId) = min(productOrderDate(productId), procDate);
 
       % Supplier payment
-      suppPay = max(1, round(suppPayMean + suppPayStd * randn()));
+      suppPay = max(suppPayMin, round(suppPayMean + suppPayStd * randn()));
       apDue   = procDeliveryDate + suppPay;
       apWd = weekday(apDue);
       if apWd == 7, apDue = apDue + 2; end  % Sat -> Mon (ensures apDue > procDate)
