@@ -396,6 +396,17 @@ for i=1:length(dc.productNumbers)
     % --- Component BOMs: one per BOM row (= one per PO) ----------------
     % Each holds a single negative cash flow at procDeliveryDate, in the
     % component's procurement currency. Active from procDate to delivery.
+    %
+    % NPV-neutral handoff (Component BOM -> AP ZCB): discount the terminal
+    % payout from nominal -costInProcCur to -costInProcCur * d(procDelivery,
+    % apDue) so the BOM's dividend at component receipt equals the AP ZCB's
+    % short-sale proceeds at the same date. Net cash at procDelivery is then
+    % zero (procurement currency in = procurement currency out, swept to EUR
+    % at the same spot). The order-date opening (sBv = -Pbar in buildPA.m)
+    % is unaffected: -Pbar still cancels whatever Pbar is at procDateVal.
+    % Discount only when the AP ZCB will actually be created, using the same
+    % skip set as createDataCompany.m:511 (isempty(ap_jj)||isempty(ap_kk)
+    % with ap_jj filtered to PA range). Otherwise fall back to nominal.
     for r = 1:length(bomRowsInd)
       rowIdx = bomRowsInd(r);
       poNum  = dc.b.purchaseOrderNumber(rowIdx);
@@ -409,8 +420,22 @@ for i=1:length(dc.productNumbers)
       procDelivery  = dc.p.accountingDate(poRow);
       costInProcCur = dc.p.lineAmountOrderCurrency(poRow);
 
+      ap_jj = find(dc.ap.transactionCode == 10 & ...
+                   dc.ap.accountingDate > firstDate & ...
+                   dc.ap.accountingDate <= lastDate & ...
+                   dc.ap.invoiceNumber == poNum);
+      ap_kk = find(dc.ap.transactionCode == 20 & dc.ap.invoiceNumber == poNum);
+      if ~isempty(ap_jj) && ~isempty(ap_kk)
+        apDue  = dc.ap.accountingDate(ap_kk);
+        iDel   = dm.indAllDates(procDelivery - dm.dates(1) + 1);
+        d_ap   = dm.d{iCurProc}(iDel, apDue - procDelivery + 1);
+        K_pay  = -costInProcCur * d_ap;
+      else
+        K_pay  = -costInProcCur;  % nominal fallback: no AP ZCB to hand off to
+      end
+
       pbComp = clsPriceBOM(iCurPrice, procDateVal, procDelivery, ...
-                           -costInProcCur, iCurProc);
+                           K_pay, iCurProc);
       idComp = dc.assets.add(pbComp, AssetType.itemManufactured);
       dc.b.jComponentBOM(rowIdx) = idComp;
     end
@@ -423,6 +448,18 @@ for i=1:length(dc.productNumbers)
     %
     % mfgStart per product = min(b.reportingDate) over the product's BOM rows
     % (the simulation writes mfgStart into b_repDate for every row).
+    %
+    % NPV-neutral handoff (Product BOM -> AR ZCB): discount the terminal
+    % payout from nominal sellingPrice to sellingPrice * d(invoiceDate,
+    % arDueDate) so the BOM's dividend at invoice equals the AR ZCB's
+    % purchase price at the same date. Net cash at invoiceDate is then zero
+    % (customer-currency in from dividend = customer-currency out for AR ZCB,
+    % swept to EUR at the same spot). The order-date opening (sBv = -Pbar in
+    % buildPA.m) is unaffected: -Pbar still cancels whatever Pbar is at
+    % mfgStartForProduct. Discount only when the AR ZCB will actually be
+    % created, using the same skip set as createDataCompany.m:489
+    % (length(jj)~=1||length(kk)~=1 with jj filtered to PA range). Otherwise
+    % fall back to nominal.
     mfgStartForProduct = min(dc.b.reportingDate(bomRowsInd));
 
     ii = find(dc.sa.itemNumber == dc.productNumbers(i));
@@ -433,8 +470,19 @@ for i=1:length(dc.productNumbers)
       invoiceDate  = dc.a.accountingDate(jj);
       iCurSale     = dc.a.iCur(jj);
 
+      kk = find(dc.a.transactionCode == 20 & dc.a.invoiceNumber == invoiceNumber);
+      jjInRange = (invoiceDate > firstDate) && (invoiceDate <= lastDate);
+      if jjInRange && length(kk) == 1
+        arDueDate = dc.a.accountingDate(kk);
+        iInvoice  = dm.indAllDates(invoiceDate - dm.dates(1) + 1);
+        d_ar      = dm.d{iCurSale}(iInvoice, arDueDate - invoiceDate + 1);
+        K_pay     = sellingPrice * d_ar;
+      else
+        K_pay     = sellingPrice;  % nominal fallback: no AR ZCB to hand off to
+      end
+
       pbProd = clsPriceBOM(iCurPrice, mfgStartForProduct, ...
-                           invoiceDate, sellingPrice, iCurSale);
+                           invoiceDate, K_pay, iCurSale);
       idProd = dc.assets.add(pbProd, AssetType.itemManufactured);
       dc.productBomId(i) = idProd;
     end
