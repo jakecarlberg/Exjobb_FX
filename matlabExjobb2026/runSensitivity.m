@@ -136,13 +136,19 @@ results.paramKeys   = paramSweeps(:,1);
 results.paramLabels = paramSweeps(:,2);
 results.baseline    = baseline;
 
-methodsTI  = {'M1','M2w','M2m','M2q'};
-methodsOCI = {'M1','M2w','M2m','M2q'};
-methodsCC  = {'M1_CC','CC_avg','CC_close','PAM_bonds'};
+methodsTI       = {'M1','M2w','M2m','M2q'};
+methodsOCI      = {'M1','M2w','M2m','M2q'};
+methodsCC       = {'M1_CC','CC_avg','CC_close','PAM_bonds'};   % vs flowCC_BOM_total benchmark
+methodsCC_bonds = {'M1_CC','CC_avg','CC_close'};               % vs flowCC_bonds_total benchmark
+                                                               % (PAM_bonds would be the benchmark itself)
 
 for m = methodsTI
-  results.rmse_TI.(m{1}) = nan(nParams, nScales);
-  results.me_TI.(m{1})   = nan(nParams, nScales);
+  % vs PAM FX_trans (bonds-only, monetary-item TI)
+  results.rmse_TI.(m{1})     = nan(nParams, nScales);
+  results.me_TI.(m{1})       = nan(nParams, nScales);
+  % vs PAM FX_trans_BOM (bonds + BOM phase, full economic TI exposure)
+  results.rmse_TI_BOM.(m{1}) = nan(nParams, nScales);
+  results.me_TI_BOM.(m{1})   = nan(nParams, nScales);
 end
 for m = methodsOCI
   results.rmse_OCI.(m{1}) = nan(nParams, nScales);
@@ -151,6 +157,10 @@ end
 for m = methodsCC
   results.rmse_CC.(m{1}) = nan(nParams, nScales);
   results.me_CC.(m{1})   = nan(nParams, nScales);
+end
+for m = methodsCC_bonds
+  results.rmse_CC_bonds.(m{1}) = nan(nParams, nScales);
+  results.me_CC_bonds.(m{1})   = nan(nParams, nScales);
 end
 
 % =========================================================================
@@ -174,6 +184,15 @@ for pi_ = 1:nParams
     to_ = baseline;
     to_.(meanField_) = (1 - s_) * baseline.(meanField_);
     to_.(stdField_)  = (1 - s_) * baseline.(stdField_);
+    % Override createMatFilesSim's realism floors (procLead>=5, mfg>=1,
+    % custPay>=7, suppPay>=1) so that s=1 actually drives windows toward
+    % zero instead of bottoming out at the floor. Floor of 1 day is the
+    % smallest meaningful value (events still need distinct calendar days
+    % for buildPA's date indexing).
+    to_.procLeadMin = 1;
+    to_.mfgMin      = 1;
+    to_.custPayMin  = 1;
+    to_.suppPayMin  = 1;
     for k_ = 1:K
       t_ = t_ + 1;
       tasks{t_} = struct( ...
@@ -243,9 +262,20 @@ parfor ii = 1:nRun
   ckptFile = task.ckptFile;
 
   if exist(ckptFile, 'file')
-    % Already computed — load and skip
+    % Already computed — load and skip. Patch fields missing from old
+    % checkpoints (saved before the bonds+BOM TI / flowCC sub-components
+    % were captured) so the aggregation loop doesn't error on access.
     tmp = load(ckptFile, 'r');
-    runResults{ii} = tmp.r;
+    rLoaded = tmp.r;
+    nP = nPeriods;
+    if ~isfield(rLoaded, 'PAM_TI_BOM'),    rLoaded.PAM_TI_BOM    = nan(1,nP); end
+    if ~isfield(rLoaded, 'fBonds_trans'),  rLoaded.fBonds_trans  = nan(1,nP); end
+    if ~isfield(rLoaded, 'fBonds_transl'), rLoaded.fBonds_transl = nan(1,nP); end
+    if ~isfield(rLoaded, 'fBonds_cross'),  rLoaded.fBonds_cross  = nan(1,nP); end
+    if ~isfield(rLoaded, 'fBOM_trans'),    rLoaded.fBOM_trans    = nan(1,nP); end
+    if ~isfield(rLoaded, 'fBOM_transl'),   rLoaded.fBOM_transl   = nan(1,nP); end
+    if ~isfield(rLoaded, 'fBOM_cross'),    rLoaded.fBOM_cross    = nan(1,nP); end
+    runResults{ii} = rLoaded;
     if ~isempty(dq)
       send(dq, struct('paramKey',task.paramKey,'s',task.s,'k',task.k,'tag','cached'));
     end
@@ -260,14 +290,19 @@ parfor ii = 1:nRun
   localSettings.dataFolder = wFolder;
 
   r = struct( ...
-    'PAM_TI',   nan(1,nPeriods), 'PAM_OCI',  nan(1,nPeriods), ...
-    'M1_TI',    nan(1,nPeriods), 'M1_OCI',   nan(1,nPeriods), ...
-    'M2w_TI',   nan(1,nPeriods), 'M2w_OCI',  nan(1,nPeriods), ...
-    'M2m_TI',   nan(1,nPeriods), 'M2m_OCI',  nan(1,nPeriods), ...
-    'M2q_TI',   nan(1,nPeriods), 'M2q_OCI',  nan(1,nPeriods), ...
-    'M1_CC',    nan(1,nPeriods), 'CC_avg',   nan(1,nPeriods), ...
-    'CC_close', nan(1,nPeriods), ...
-    'fBonds',   nan(1,nPeriods), 'fBOM',     nan(1,nPeriods));
+    'PAM_TI',       nan(1,nPeriods), 'PAM_OCI',      nan(1,nPeriods), ...
+    'PAM_TI_BOM',   nan(1,nPeriods), ...
+    'M1_TI',        nan(1,nPeriods), 'M1_OCI',       nan(1,nPeriods), ...
+    'M2w_TI',       nan(1,nPeriods), 'M2w_OCI',      nan(1,nPeriods), ...
+    'M2m_TI',       nan(1,nPeriods), 'M2m_OCI',      nan(1,nPeriods), ...
+    'M2q_TI',       nan(1,nPeriods), 'M2q_OCI',      nan(1,nPeriods), ...
+    'M1_CC',        nan(1,nPeriods), 'CC_avg',       nan(1,nPeriods), ...
+    'CC_close',     nan(1,nPeriods), ...
+    'fBonds',       nan(1,nPeriods), 'fBOM',         nan(1,nPeriods), ...
+    'fBonds_trans', nan(1,nPeriods), 'fBonds_transl',nan(1,nPeriods), ...
+    'fBonds_cross', nan(1,nPeriods), ...
+    'fBOM_trans',   nan(1,nPeriods), 'fBOM_transl',  nan(1,nPeriods), ...
+    'fBOM_cross',   nan(1,nPeriods));
 
   try
     createMatFilesSim(dm, task.k, false, wFolder, sandvikArrays, task.timingOverride);
@@ -278,8 +313,9 @@ parfor ii = 1:nRun
     for p = 1:nPeriods
       idx = quarterIdx{p};
       if ~isempty(idx)
-        r.PAM_TI(p)  = sum(dr.dFX_trans(idx));
-        r.PAM_OCI(p) = sum(dr.dFX_transl(idx));
+        r.PAM_TI(p)     = sum(dr.dFX_trans(idx));        % bonds-only PAM TI
+        r.PAM_TI_BOM(p) = sum(dr.dFX_trans_BOM(idx));    % bonds + BOM PAM TI (full economic exposure)
+        r.PAM_OCI(p)    = sum(dr.dFX_transl(idx));       % PAM translation / OCI
       end
     end
 
@@ -302,8 +338,16 @@ parfor ii = 1:nRun
 
     fcc = performanceAttributionFlowCC(dm, dc, pnl);
     Pf  = min(length(fcc.bonds.total_quarterly), nPeriods);
+    % Totals (used as CC benchmarks); keep historical fBonds/fBOM names.
     r.fBonds(1:Pf) = fcc.bonds.total_quarterly(1:Pf)';
     r.fBOM(1:Pf)   = fcc.BOM.total_quarterly(1:Pf)';
+    % Sub-components (mirrors runMC's flowCC_{bonds,BOM}_{trans,transl,cross}).
+    r.fBonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
+    r.fBonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
+    r.fBonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
+    r.fBOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
+    r.fBOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
+    r.fBOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
   catch ME
     fprintf(2, '\n  task %d (%s s=%.2f seed=%d) ERROR: %s\n', ...
       t, task.paramKey, task.s, task.k, ME.message);
@@ -337,22 +381,25 @@ for pi = 1:nParams
     s = scalings(si);
     base = ((pi-1) * nScales + (si-1)) * K;
 
-    PAM_TI   = nan(K, nPeriods);
-    PAM_OCI  = nan(K, nPeriods);
-    M1_TI    = nan(K, nPeriods);   M1_OCI   = nan(K, nPeriods);
-    M2w_TI   = nan(K, nPeriods);   M2w_OCI  = nan(K, nPeriods);
-    M2m_TI   = nan(K, nPeriods);   M2m_OCI  = nan(K, nPeriods);
-    M2q_TI   = nan(K, nPeriods);   M2q_OCI  = nan(K, nPeriods);
-    M1_CC    = nan(K, nPeriods);
-    CC_avg   = nan(K, nPeriods);
-    CC_close = nan(K, nPeriods);
-    fBonds   = nan(K, nPeriods);
-    fBOM     = nan(K, nPeriods);
+    PAM_TI     = nan(K, nPeriods);
+    PAM_TI_BOM = nan(K, nPeriods);
+    PAM_OCI    = nan(K, nPeriods);
+    M1_TI      = nan(K, nPeriods);   M1_OCI   = nan(K, nPeriods);
+    M2w_TI     = nan(K, nPeriods);   M2w_OCI  = nan(K, nPeriods);
+    M2m_TI     = nan(K, nPeriods);   M2m_OCI  = nan(K, nPeriods);
+    M2q_TI     = nan(K, nPeriods);   M2q_OCI  = nan(K, nPeriods);
+    M1_CC      = nan(K, nPeriods);
+    CC_avg     = nan(K, nPeriods);
+    CC_close   = nan(K, nPeriods);
+    fBonds     = nan(K, nPeriods);
+    fBOM       = nan(K, nPeriods);
 
     for k = 1:K
       r = allResults{base + k};
       if isempty(r), continue; end
-      PAM_TI(k,:)   = r.PAM_TI;    PAM_OCI(k,:)  = r.PAM_OCI;
+      PAM_TI(k,:)     = r.PAM_TI;
+      PAM_TI_BOM(k,:) = r.PAM_TI_BOM;
+      PAM_OCI(k,:)    = r.PAM_OCI;
       M1_TI(k,:)    = r.M1_TI;     M1_OCI(k,:)   = r.M1_OCI;
       M2w_TI(k,:)   = r.M2w_TI;    M2w_OCI(k,:)  = r.M2w_OCI;
       M2m_TI(k,:)   = r.M2m_TI;    M2m_OCI(k,:)  = r.M2m_OCI;
@@ -364,6 +411,10 @@ for pi = 1:nParams
       fBOM(k,:)     = r.fBOM;
     end
 
+    % Original valid mask — only requires fields needed for legacy metrics.
+    % New metrics (rmse_TI_BOM, rmse_CC_bonds) will produce NaN per cell if
+    % their inputs are NaN (e.g. when loading old checkpoints that predate
+    % the bonds+BOM capture), without affecting the original metrics.
     valid = ~any(isnan(PAM_TI),2) & ~any(isnan(PAM_OCI),2) & ...
             ~any(isnan(M1_TI),2)  & ~any(isnan(M2m_TI),2) & ...
             ~any(isnan(fBOM),2);
@@ -371,25 +422,41 @@ for pi = 1:nParams
     rmse = @(A,B) sqrt(mean((A(valid,:) - B(valid,:)).^2, 'all'));
     me   = @(A,B) mean(A(valid,:) - B(valid,:), 'all');
 
+    % TI vs bonds-only PAM (FX_trans). What M1/M2 ARE trying to track.
     results.rmse_TI.M1(pi,si)  = rmse(PAM_TI, M1_TI);   results.me_TI.M1(pi,si)  = me(PAM_TI, M1_TI);
     results.rmse_TI.M2w(pi,si) = rmse(PAM_TI, M2w_TI);  results.me_TI.M2w(pi,si) = me(PAM_TI, M2w_TI);
     results.rmse_TI.M2m(pi,si) = rmse(PAM_TI, M2m_TI);  results.me_TI.M2m(pi,si) = me(PAM_TI, M2m_TI);
     results.rmse_TI.M2q(pi,si) = rmse(PAM_TI, M2q_TI);  results.me_TI.M2q(pi,si) = me(PAM_TI, M2q_TI);
+
+    % TI vs bonds+BOM PAM (FX_trans_BOM). What PAM uniquely captures via the BOM phase.
+    results.rmse_TI_BOM.M1(pi,si)  = rmse(PAM_TI_BOM, M1_TI);   results.me_TI_BOM.M1(pi,si)  = me(PAM_TI_BOM, M1_TI);
+    results.rmse_TI_BOM.M2w(pi,si) = rmse(PAM_TI_BOM, M2w_TI);  results.me_TI_BOM.M2w(pi,si) = me(PAM_TI_BOM, M2w_TI);
+    results.rmse_TI_BOM.M2m(pi,si) = rmse(PAM_TI_BOM, M2m_TI);  results.me_TI_BOM.M2m(pi,si) = me(PAM_TI_BOM, M2m_TI);
+    results.rmse_TI_BOM.M2q(pi,si) = rmse(PAM_TI_BOM, M2q_TI);  results.me_TI_BOM.M2q(pi,si) = me(PAM_TI_BOM, M2q_TI);
 
     results.rmse_OCI.M1(pi,si)  = rmse(PAM_OCI, M1_OCI);   results.me_OCI.M1(pi,si)  = me(PAM_OCI, M1_OCI);
     results.rmse_OCI.M2w(pi,si) = rmse(PAM_OCI, M2w_OCI);  results.me_OCI.M2w(pi,si) = me(PAM_OCI, M2w_OCI);
     results.rmse_OCI.M2m(pi,si) = rmse(PAM_OCI, M2m_OCI);  results.me_OCI.M2m(pi,si) = me(PAM_OCI, M2m_OCI);
     results.rmse_OCI.M2q(pi,si) = rmse(PAM_OCI, M2q_OCI);  results.me_OCI.M2q(pi,si) = me(PAM_OCI, M2q_OCI);
 
+    % CC vs PAM BOM-flow (full economic CC).
     results.rmse_CC.M1_CC(pi,si)     = rmse(fBOM, M1_CC);    results.me_CC.M1_CC(pi,si)     = me(fBOM, M1_CC);
     results.rmse_CC.CC_avg(pi,si)    = rmse(fBOM, CC_avg);   results.me_CC.CC_avg(pi,si)    = me(fBOM, CC_avg);
     results.rmse_CC.CC_close(pi,si)  = rmse(fBOM, CC_close); results.me_CC.CC_close(pi,si)  = me(fBOM, CC_close);
     results.rmse_CC.PAM_bonds(pi,si) = rmse(fBOM, fBonds);   results.me_CC.PAM_bonds(pi,si) = me(fBOM, fBonds);
 
-    fprintf(['[%s s=%.2f] RMSE TI/M1=%.1fM  OCI/M1=%.1fM  CC/M1=%.1fM  CC/bonds=%.1fM\n'], ...
+    % CC vs PAM bonds-flow (recognised-only CC). What M1/M2 CC variants ARE trying to track.
+    results.rmse_CC_bonds.M1_CC(pi,si)    = rmse(fBonds, M1_CC);    results.me_CC_bonds.M1_CC(pi,si)    = me(fBonds, M1_CC);
+    results.rmse_CC_bonds.CC_avg(pi,si)   = rmse(fBonds, CC_avg);   results.me_CC_bonds.CC_avg(pi,si)   = me(fBonds, CC_avg);
+    results.rmse_CC_bonds.CC_close(pi,si) = rmse(fBonds, CC_close); results.me_CC_bonds.CC_close(pi,si) = me(fBonds, CC_close);
+
+    fprintf(['[%s s=%.2f] RMSE TI/M1 bonds=%.1fM  BOM=%.1fM | OCI/M1=%.1fM | ' ...
+             'CC/M1 BOM=%.1fM  bonds=%.1fM | BOM-phase=%.1fM\n'], ...
       paramKey, s, ...
-      results.rmse_TI.M1(pi,si)/1e6, results.rmse_OCI.M1(pi,si)/1e6, ...
-      results.rmse_CC.M1_CC(pi,si)/1e6, results.rmse_CC.PAM_bonds(pi,si)/1e6);
+      results.rmse_TI.M1(pi,si)/1e6, results.rmse_TI_BOM.M1(pi,si)/1e6, ...
+      results.rmse_OCI.M1(pi,si)/1e6, ...
+      results.rmse_CC.M1_CC(pi,si)/1e6, results.rmse_CC_bonds.M1_CC(pi,si)/1e6, ...
+      results.rmse_CC.PAM_bonds(pi,si)/1e6);
   end
 end
 
@@ -403,28 +470,49 @@ fprintf('Results saved to sensitivity_results.mat\n');
 
 % =========================================================================
 % CONSOLE SUMMARY  (one table per param, RMSE per method)
+%
+% Two TI rows per method (vs bonds-only PAM, vs bonds+BOM PAM):
+%   *_b  -> vs FX_trans      (the accounting-comparable benchmark)
+%   *_B  -> vs FX_trans_BOM  (the full PAM economic exposure)
+% Two CC rows per accounting method (vs BOM-flow, vs bonds-flow):
+%   *_B  -> vs flowCC_BOM_total
+%   *_b  -> vs flowCC_bonds_total
 % =========================================================================
 for pi = 1:nParams
   fprintf('\n=== %s — RMSE in SEK million (rows: methods, cols: scaling s) ===\n', ...
     paramSweeps{pi, 2});
-  fprintf('%-14s', 'Method');
+  fprintf('%-18s', 'Method');
   for si = 1:nScales, fprintf('%10s', sprintf('s=%.2f', scalings(si))); end
-  fprintf('\n%s\n', repmat('-', 1, 14 + 10*nScales));
+  fprintf('\n%s\n', repmat('-', 1, 18 + 10*nScales));
 
-  printRMSErow('TI/M1',       results.rmse_TI.M1(pi,:),     nScales);
-  printRMSErow('TI/M2w',      results.rmse_TI.M2w(pi,:),    nScales);
-  printRMSErow('TI/M2m',      results.rmse_TI.M2m(pi,:),    nScales);
-  printRMSErow('TI/M2q',      results.rmse_TI.M2q(pi,:),    nScales);
-  printRMSErow('OCI/M1',      results.rmse_OCI.M1(pi,:),    nScales);
-  printRMSErow('OCI/M2m',     results.rmse_OCI.M2m(pi,:),   nScales);
-  printRMSErow('CC/M1_CC',    results.rmse_CC.M1_CC(pi,:),  nScales);
-  printRMSErow('CC/CC_avg',   results.rmse_CC.CC_avg(pi,:), nScales);
-  printRMSErow('CC/CC_close', results.rmse_CC.CC_close(pi,:),nScales);
-  printRMSErow('CC/bonds',    results.rmse_CC.PAM_bonds(pi,:),nScales);
+  printRMSErow('TI/M1   vs bonds',  results.rmse_TI.M1(pi,:),       nScales);
+  printRMSErow('TI/M1   vs BOM',    results.rmse_TI_BOM.M1(pi,:),   nScales);
+  printRMSErow('TI/M2w  vs bonds',  results.rmse_TI.M2w(pi,:),      nScales);
+  printRMSErow('TI/M2w  vs BOM',    results.rmse_TI_BOM.M2w(pi,:),  nScales);
+  printRMSErow('TI/M2m  vs bonds',  results.rmse_TI.M2m(pi,:),      nScales);
+  printRMSErow('TI/M2m  vs BOM',    results.rmse_TI_BOM.M2m(pi,:),  nScales);
+  printRMSErow('TI/M2q  vs bonds',  results.rmse_TI.M2q(pi,:),      nScales);
+  printRMSErow('TI/M2q  vs BOM',    results.rmse_TI_BOM.M2q(pi,:),  nScales);
+  printRMSErow('OCI/M1',            results.rmse_OCI.M1(pi,:),      nScales);
+  printRMSErow('OCI/M2m',           results.rmse_OCI.M2m(pi,:),     nScales);
+  printRMSErow('CC/M1   vs BOM',    results.rmse_CC.M1_CC(pi,:),    nScales);
+  printRMSErow('CC/M1   vs bonds',  results.rmse_CC_bonds.M1_CC(pi,:),  nScales);
+  printRMSErow('CC/avg  vs BOM',    results.rmse_CC.CC_avg(pi,:),   nScales);
+  printRMSErow('CC/avg  vs bonds',  results.rmse_CC_bonds.CC_avg(pi,:), nScales);
+  printRMSErow('CC/close vs BOM',   results.rmse_CC.CC_close(pi,:), nScales);
+  printRMSErow('CC/close vs bonds', results.rmse_CC_bonds.CC_close(pi,:), nScales);
+  printRMSErow('CC bonds vs BOM',   results.rmse_CC.PAM_bonds(pi,:),nScales);  % BOM-phase size
 end
 
 % =========================================================================
-% PLOTS — one figure per parameter, three subplots (TI / OCI / CC)
+% PLOTS — one figure per parameter, 2x3 subplots:
+%   Row 1: TI vs PAM bonds-only | OCI | CC vs PAM BOM-flow   (the "accounting-comparable" benchmarks)
+%   Row 2: TI vs PAM bonds+BOM  | (legend) | CC vs PAM bonds-flow   (the "full PAM" benchmarks)
+%
+% The row-1 plots ask: "Within the scope each accounting method targets,
+% how close does it get to PAM?" The row-2 plots ask: "How big is the gap
+% caused by PAM's extra BOM-phase coverage that accounting methods miss?"
+% Both perspectives are needed for the thesis comparison.
 % =========================================================================
 cM1    = [0.89 0.10 0.11];  % red
 cM2w   = [0.99 0.55 0.24];  % orange
@@ -443,32 +531,59 @@ for pi = 1:nParams
   paramLabel = paramSweeps{pi, 2};
   paramKey   = paramSweeps{pi, 1};
 
-  % --- TI subplot ---
-  subplot(1,3,1); hold on;
+  % --- Row 1, Col 1: TI vs PAM bonds-only (accounting-comparable) ---
+  subplot(2,3,1); hold on;
   plot(scalings, results.rmse_TI.M1(pi,:)/1e6,  '-o', 'Color',cM1,  'LineWidth',1.6,'DisplayName','M1');
   plot(scalings, results.rmse_TI.M2w(pi,:)/1e6, '-o', 'Color',cM2w, 'LineWidth',1.6,'DisplayName','M2 weekly');
   plot(scalings, results.rmse_TI.M2m(pi,:)/1e6, '-o', 'Color',cM2m, 'LineWidth',1.6,'DisplayName','M2 monthly');
   plot(scalings, results.rmse_TI.M2q(pi,:)/1e6, '-o', 'Color',cM2q, 'LineWidth',1.6,'DisplayName','M2 quarterly');
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('TI'); legend('Location','Best');
+  title('TI vs PAM bonds (FX\_trans)'); legend('Location','Best');
 
-  % --- OCI subplot ---
-  subplot(1,3,2); hold on;
+  % --- Row 1, Col 2: OCI (unchanged — translation has only one benchmark) ---
+  subplot(2,3,2); hold on;
   plot(scalings, results.rmse_OCI.M1(pi,:)/1e6,  '-o', 'Color',cM1,  'LineWidth',1.6,'DisplayName','M1 OCI');
   plot(scalings, results.rmse_OCI.M2w(pi,:)/1e6, '-o', 'Color',cM2w, 'LineWidth',1.6,'DisplayName','M2 weekly');
   plot(scalings, results.rmse_OCI.M2m(pi,:)/1e6, '-o', 'Color',cM2m, 'LineWidth',1.6,'DisplayName','M2 monthly');
   plot(scalings, results.rmse_OCI.M2q(pi,:)/1e6, '-o', 'Color',cM2q, 'LineWidth',1.6,'DisplayName','M2 quarterly');
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('OCI'); legend('Location','Best');
+  title('OCI (FX\_transl)'); legend('Location','Best');
 
-  % --- CC subplot ---
-  subplot(1,3,3); hold on;
+  % --- Row 1, Col 3: CC vs PAM BOM-flow (full economic CC) ---
+  subplot(2,3,3); hold on;
   plot(scalings, results.rmse_CC.M1_CC(pi,:)/1e6,     '-o', 'Color',cM1,    'LineWidth',1.6,'DisplayName','M1 CC');
   plot(scalings, results.rmse_CC.CC_avg(pi,:)/1e6,    '-o', 'Color',cCCavg, 'LineWidth',1.6,'DisplayName','CC avg');
   plot(scalings, results.rmse_CC.CC_close(pi,:)/1e6,  '-o', 'Color',cCCcls, 'LineWidth',1.6,'DisplayName','CC close');
   plot(scalings, results.rmse_CC.PAM_bonds(pi,:)/1e6, '-o', 'Color',cPAM,   'LineWidth',1.6,'DisplayName','PAM bonds');
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('CC'); legend('Location','Best');
+  title('CC vs PAM BOM-flow'); legend('Location','Best');
+
+  % --- Row 2, Col 1: TI vs PAM bonds+BOM (full PAM exposure) ---
+  subplot(2,3,4); hold on;
+  plot(scalings, results.rmse_TI_BOM.M1(pi,:)/1e6,  '-o', 'Color',cM1,  'LineWidth',1.6,'DisplayName','M1');
+  plot(scalings, results.rmse_TI_BOM.M2w(pi,:)/1e6, '-o', 'Color',cM2w, 'LineWidth',1.6,'DisplayName','M2 weekly');
+  plot(scalings, results.rmse_TI_BOM.M2m(pi,:)/1e6, '-o', 'Color',cM2m, 'LineWidth',1.6,'DisplayName','M2 monthly');
+  plot(scalings, results.rmse_TI_BOM.M2q(pi,:)/1e6, '-o', 'Color',cM2q, 'LineWidth',1.6,'DisplayName','M2 quarterly');
+  xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
+  title('TI vs PAM bonds+BOM (FX\_trans\_BOM)'); legend('Location','Best');
+
+  % --- Row 2, Col 2: empty (or annotation) ---
+  subplot(2,3,5); axis off;
+  text(0.5, 0.5, sprintf(['Row 1: accounting-comparable benchmarks\n' ...
+                          '(what M1/M2 try to track)\n\n' ...
+                          'Row 2: full PAM benchmarks\n' ...
+                          '(what M1/M2 structurally cannot track)\n\n' ...
+                          'Gap = BOM-phase exposure size']), ...
+       'HorizontalAlignment','center', 'VerticalAlignment','middle', ...
+       'FontSize',9);
+
+  % --- Row 2, Col 3: CC vs PAM bonds-flow (recognised-only CC) ---
+  subplot(2,3,6); hold on;
+  plot(scalings, results.rmse_CC_bonds.M1_CC(pi,:)/1e6,    '-o', 'Color',cM1,    'LineWidth',1.6,'DisplayName','M1 CC');
+  plot(scalings, results.rmse_CC_bonds.CC_avg(pi,:)/1e6,   '-o', 'Color',cCCavg, 'LineWidth',1.6,'DisplayName','CC avg');
+  plot(scalings, results.rmse_CC_bonds.CC_close(pi,:)/1e6, '-o', 'Color',cCCcls, 'LineWidth',1.6,'DisplayName','CC close');
+  xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
+  title('CC vs PAM bonds-flow'); legend('Location','Best');
 
   sgtitle(paramLabel);
 
@@ -476,19 +591,21 @@ for pi = 1:nParams
   axs = findall(fh, 'Type', 'axes');
   for ai = 1:length(axs)
     axs(ai).FontSize = 9;
-    axs(ai).Title.FontSize = 11;
-    axs(ai).Title.FontWeight = 'bold';
+    if ~isempty(axs(ai).Title)
+      axs(ai).Title.FontSize = 10;
+      axs(ai).Title.FontWeight = 'bold';
+    end
     axs(ai).XLabel.FontSize = 10;
     axs(ai).YLabel.FontSize = 10;
     if ~isempty(axs(ai).Legend)
-      axs(ai).Legend.FontSize = 9;
+      axs(ai).Legend.FontSize = 8;
     end
   end
 
-  % Size and save as PDF
-  set(fh, 'Units','centimeters', 'Position',[0 0 24 8]);
-  set(fh, 'PaperUnits','centimeters', 'PaperSize',[24 8], ...
-          'PaperPosition',[0 0 24 8], 'PaperPositionMode','manual');
+  % Size and save as PDF (taller for 2 rows)
+  set(fh, 'Units','centimeters', 'Position',[0 0 26 16]);
+  set(fh, 'PaperUnits','centimeters', 'PaperSize',[26 16], ...
+          'PaperPosition',[0 0 26 16], 'PaperPositionMode','manual');
   pdfName = fullfile(figDir, sprintf('sensitivity_%s.pdf', paramKey));
   saveas(fh, pdfName);
   fprintf('  Figure saved: %s\n', pdfName);
@@ -498,7 +615,7 @@ end
 % LOCAL FUNCTIONS
 % =========================================================================
 function printRMSErow(label, row, nScales)
-  fprintf('%-14s', label);
+  fprintf('%-18s', label);
   for si = 1:nScales
     fprintf('%10.2f', row(si) / 1e6);
   end
