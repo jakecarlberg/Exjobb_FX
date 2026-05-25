@@ -62,12 +62,17 @@ baseline.mfgMean      = 30;  baseline.mfgStd      =  5;
 baseline.custPayMean  = 45;  baseline.custPayStd  = 15;
 baseline.suppPayMean  = 60;  baseline.suppPayStd  = 15;
 
-% Parameter sweep table:  key | display label | mean-field | std-field
+% Parameter sweep table:  key | display label | mean-field(s) | std-field(s)
+% Mean/std columns are cell arrays so a single "parameter" can scale
+% multiple underlying timing fields together (e.g. bomBoth scales procLead
+% and mfg simultaneously, collapsing both Component and Product BOM phases
+% at the same time). For single-field params just pass a 1-element cell.
 paramSweeps = {
-  'procLead',  'Procurement lead time',  'procLeadMean', 'procLeadStd';
-  'mfg',       'Manufacturing time',     'mfgMean',      'mfgStd';
-  'custPay',   'Customer payment delay', 'custPayMean',  'custPayStd';
-  'suppPay',   'Supplier payment delay', 'suppPayMean',  'suppPayStd';
+  'procLead',  'Procurement lead time',         {'procLeadMean'},               {'procLeadStd'};
+  'mfg',       'Manufacturing time',            {'mfgMean'},                    {'mfgStd'};
+  'custPay',   'Customer payment delay',        {'custPayMean'},                {'custPayStd'};
+  'suppPay',   'Supplier payment delay',        {'suppPayMean'},                {'suppPayStd'};
+  'bomBoth',   'BOM phase (procLead + mfg)',    {'procLeadMean','mfgMean'},     {'procLeadStd','mfgStd'};
 };
 scalings = [0, 0.25, 0.5, 0.75, 1];
 nParams  = size(paramSweeps, 1);
@@ -176,14 +181,19 @@ totalTasks = nParams * nScales * K;
 tasks = cell(totalTasks, 1);
 t_ = 0;
 for pi_ = 1:nParams
-  paramKey_  = paramSweeps{pi_, 1};
-  meanField_ = paramSweeps{pi_, 3};
-  stdField_  = paramSweeps{pi_, 4};
+  paramKey_   = paramSweeps{pi_, 1};
+  meanFields_ = paramSweeps{pi_, 3};   % cell array: one or more mean field names
+  stdFields_  = paramSweeps{pi_, 4};   % cell array: matching std field names
   for si_ = 1:nScales
     s_ = scalings(si_);
     to_ = baseline;
-    to_.(meanField_) = (1 - s_) * baseline.(meanField_);
-    to_.(stdField_)  = (1 - s_) * baseline.(stdField_);
+    % Scale every mean+std pair listed for this parameter. For single-field
+    % params (procLead, mfg, custPay, suppPay) this is one iteration. For
+    % the combined "bomBoth" param it scales procLead AND mfg together.
+    for ff = 1:length(meanFields_)
+      to_.(meanFields_{ff}) = (1 - s_) * baseline.(meanFields_{ff});
+      to_.(stdFields_{ff})  = (1 - s_) * baseline.(stdFields_{ff});
+    end
     % Override createMatFilesSim's realism floors (procLead>=5, mfg>=1,
     % custPay>=7, suppPay>=1) so that s=1 actually drives windows toward
     % zero instead of bottoming out at the floor. Floor of 1 day is the

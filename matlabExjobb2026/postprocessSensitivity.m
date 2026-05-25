@@ -245,7 +245,10 @@ for f = 1:length(files)
 end
 
 % Sort by canonical order (matches runSensitivity)
-canonicalOrder = {'procLead','mfg','custPay','suppPay'};
+% bomBoth is the combined procLead+mfg sweep added in runSensitivity to
+% test the "BOM-source-of-TI-gap" hypothesis. Listed last so it shows as
+% the bottom row in every grid.
+canonicalOrder = {'procLead','mfg','custPay','suppPay','bomBoth'};
 paramKeys = canonicalOrder(ismember(canonicalOrder, paramKeysSet));
 if length(paramKeys) ~= length(paramKeysSet)
   % Fall back: include unknown keys at the end
@@ -255,8 +258,8 @@ end
 
 % Labels matching runSensitivity's paramSweeps
 labelMap = containers.Map( ...
-  {'procLead','mfg','custPay','suppPay'}, ...
-  {'Procurement lead time','Manufacturing time','Customer payment delay','Supplier payment delay'});
+  {'procLead','mfg','custPay','suppPay','bomBoth'}, ...
+  {'Procurement lead time','Manufacturing time','Customer payment delay','Supplier payment delay','BOM phase (procLead + mfg)'});
 paramLabels = cell(1, length(paramKeys));
 for i = 1:length(paramKeys)
   if isKey(labelMap, paramKeys{i})
