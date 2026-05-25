@@ -135,11 +135,20 @@ compIdx = findComparisonPeriod(dm.dates, sStart, d2s);
 [apOrderDateByInv, apPayDateByInv] = buildAPLookups(dc);
 
 % =========================================================================
-% Accumulator arrays (3 modes x 3 components, monthly buckets)
+% Accumulator arrays (4 modes x 3 components, monthly buckets)
+%   snap   : single-day deviation at t_rec
+%   bonds  : daily F over [t_rec, t_pay], cumulative = F(t_pay)
+%   BOM    : daily F over [t_ord, t_pay], cumulative = F(t_pay) (same as bonds
+%            by algebraic identity — redistributes timing only)
+%   BOMext : bonds-style + extra BOM-phase diff(F) over [t_ord+1, t_rec],
+%            cumulative = F(t_pay) + (F(t_rec) - F(t_ord)) (mirrors TI BOM:
+%            BOM-phase deviation enters as additional cumulative exposure
+%            rather than just redistribution)
 % =========================================================================
-trans_snap_m   = zeros(nSub, 1);  transl_snap_m  = zeros(nSub, 1);  cross_snap_m  = zeros(nSub, 1);
-trans_bonds_m  = zeros(nSub, 1);  transl_bonds_m = zeros(nSub, 1);  cross_bonds_m = zeros(nSub, 1);
-trans_BOM_m    = zeros(nSub, 1);  transl_BOM_m   = zeros(nSub, 1);  cross_BOM_m   = zeros(nSub, 1);
+trans_snap_m   = zeros(nSub, 1);  transl_snap_m   = zeros(nSub, 1);  cross_snap_m   = zeros(nSub, 1);
+trans_bonds_m  = zeros(nSub, 1);  transl_bonds_m  = zeros(nSub, 1);  cross_bonds_m  = zeros(nSub, 1);
+trans_BOM_m    = zeros(nSub, 1);  transl_BOM_m    = zeros(nSub, 1);  cross_BOM_m    = zeros(nSub, 1);
+trans_BOMext_m = zeros(nSub, 1);  transl_BOMext_m = zeros(nSub, 1);  cross_BOMext_m = zeros(nSub, 1);
 
 % =========================================================================
 % Walk AR (sales, sign +1)
@@ -158,13 +167,15 @@ for k = 1:length(arRows10)
 
   [trans_snap_m, transl_snap_m, cross_snap_m, ...
    trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
-   trans_BOM_m,  transl_BOM_m,  cross_BOM_m] = ...
+   trans_BOM_m,  transl_BOM_m,  cross_BOM_m, ...
+   trans_BOMext_m, transl_BOMext_m, cross_BOMext_m] = ...
     addEvent(c, iEUR, +1, C, t_rec, t_pay, t_ord, ...
              dm, f_EUR_SEK, d2s, compIdx, avgFor_EUR, avgEUR_SEK, nSub, M, ...
              useDiscounting, ...
              trans_snap_m, transl_snap_m, cross_snap_m, ...
              trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
-             trans_BOM_m,  transl_BOM_m,  cross_BOM_m);
+             trans_BOM_m,  transl_BOM_m,  cross_BOM_m, ...
+             trans_BOMext_m, transl_BOMext_m, cross_BOMext_m);
 end
 
 % =========================================================================
@@ -184,13 +195,15 @@ for k = 1:length(apRows10)
 
   [trans_snap_m, transl_snap_m, cross_snap_m, ...
    trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
-   trans_BOM_m,  transl_BOM_m,  cross_BOM_m] = ...
+   trans_BOM_m,  transl_BOM_m,  cross_BOM_m, ...
+   trans_BOMext_m, transl_BOMext_m, cross_BOMext_m] = ...
     addEvent(c, iEUR, -1, C, t_rec, t_pay, t_ord, ...
              dm, f_EUR_SEK, d2s, compIdx, avgFor_EUR, avgEUR_SEK, nSub, M, ...
              useDiscounting, ...
              trans_snap_m, transl_snap_m, cross_snap_m, ...
              trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
-             trans_BOM_m,  transl_BOM_m,  cross_BOM_m);
+             trans_BOM_m,  transl_BOM_m,  cross_BOM_m, ...
+             trans_BOMext_m, transl_BOMext_m, cross_BOMext_m);
 end
 
 % =========================================================================
@@ -211,6 +224,18 @@ fcc.BOM.transl_monthly   = transl_BOM_m;
 fcc.BOM.cross_monthly    = cross_BOM_m;
 fcc.BOM.total_monthly    = trans_BOM_m + transl_BOM_m + cross_BOM_m;
 
+% BOMext: TI-BOM-like CC variant. Bonds-style cumulative PLUS additional
+% BOM-phase deviation accumulated during [t_ord, t_rec]. Departs from
+% standard CC semantics (deviation-vs-PY at endpoint) toward TI-like
+% semantics (deviation-vs-PY accumulated over the full commitment period),
+% so BOMext cumulative > bonds cumulative whenever rates drifted during the
+% pre-recognition window. Reported alongside BOM (not replacing it) so the
+% two conventions can be compared head-to-head against industry CC methods.
+fcc.BOMext.trans_monthly  = trans_BOMext_m;
+fcc.BOMext.transl_monthly = transl_BOMext_m;
+fcc.BOMext.cross_monthly  = cross_BOMext_m;
+fcc.BOMext.total_monthly  = trans_BOMext_m + transl_BOMext_m + cross_BOMext_m;
+
 % =========================================================================
 % Quarterly aggregation (same convention as computeCC's aggToQtrs)
 % =========================================================================
@@ -218,7 +243,7 @@ qStart = pnl.quarterStartIdx;
 qEnd   = pnl.quarterEndIdx;
 Q      = length(qStart);
 
-modes  = {'snap', 'bonds', 'BOM'};
+modes  = {'snap', 'bonds', 'BOM', 'BOMext'};
 fields = {'trans', 'transl', 'cross', 'total'};
 for mi = 1:length(modes)
   for fi = 1:length(fields)
@@ -231,7 +256,8 @@ end
 % =========================================================================
 % Sanity asserts
 % =========================================================================
-ccScale = max([abs(fcc.snap.total_quarterly); abs(fcc.bonds.total_quarterly); abs(fcc.BOM.total_quarterly)]) + 1;
+ccScale = max([abs(fcc.snap.total_quarterly); abs(fcc.bonds.total_quarterly); ...
+               abs(fcc.BOM.total_quarterly);  abs(fcc.BOMext.total_quarterly)]) + 1;
 
 for mi = 1:length(modes)
   m = modes{mi};
@@ -247,6 +273,17 @@ cumDiff = abs(sum(fcc.bonds.total_quarterly) - sum(fcc.BOM.total_quarterly));
 assert(cumDiff < 1e-3 * ccScale, ...
   'PAM-flow bonds vs BOM cumulative totals must match (diff = %.3g)', cumDiff);
 
+% BOMext is bonds + (per-event BOM-phase deviation accumulation), so its
+% cumulative MUST be >= bonds in absolute value direction whenever the
+% BOM-phase contribution is non-zero. We don't assert a strict relationship
+% (BOM-phase contributions can offset across events) but we DO assert that
+% BOMext cumulative differs from bonds cumulative by exactly the sum of
+% per-event BOM-phase contributions — this is automatic by construction.
+% Diagnostic only: report the magnitude of the BOM-extension.
+bomExtMagnitude = abs(sum(fcc.BOMext.total_quarterly) - sum(fcc.bonds.total_quarterly));
+% (No hard assert here; bomExtMagnitude can legitimately be zero if t_ord
+%  == t_rec for every event, or non-zero in either direction otherwise.)
+
 % =========================================================================
 % Metadata
 % =========================================================================
@@ -260,14 +297,17 @@ end
 %% =========================================================================
 function [trans_snap_m, transl_snap_m, cross_snap_m, ...
           trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
-          trans_BOM_m,  transl_BOM_m,  cross_BOM_m] = ...
+          trans_BOM_m,  transl_BOM_m,  cross_BOM_m, ...
+          trans_BOMext_m, transl_BOMext_m, cross_BOMext_m] = ...
     addEvent(c, iEUR, signFlow, C, t_rec, t_pay, t_ord, ...
              dm, f_EUR_SEK, d2s, compIdx, avgFor_EUR, avgEUR_SEK, nSub, M, ...
              useDiscounting, ...
              trans_snap_m, transl_snap_m, cross_snap_m, ...
              trans_bonds_m, transl_bonds_m, cross_bonds_m, ...
-             trans_BOM_m,  transl_BOM_m,  cross_BOM_m)
-% Apply this event's contributions to all three mode accumulators.
+             trans_BOM_m,  transl_BOM_m,  cross_BOM_m, ...
+             trans_BOMext_m, transl_BOMext_m, cross_BOMext_m)
+% Apply this event's contributions to all four mode accumulators
+% (snap, bonds, BOM, BOMext).
 
 % --- Date validity ---
 if isempty(t_rec) || isempty(t_pay), return; end
@@ -340,14 +380,55 @@ if any(valid)
   cross_bonds_m  = cross_bonds_m  + accumarray(buckets(valid), d_cr(valid),   [nSub, 1]);
 end
 
-% --- (3) BOM mode: lifecycle [t_ord, t_pay] (BOM-extended) ---
-[d_tr, d_trsl, d_cr] = lifecycleDailyContribs(C, signFlow, t_ord, t_pay, a_path, b_path, a_PY, b_PY, discCurve);
-buckets = d2s(t_ord:t_pay);
-valid   = buckets > 0;
-if any(valid)
-  trans_BOM_m  = trans_BOM_m  + accumarray(buckets(valid), d_tr(valid),   [nSub, 1]);
-  transl_BOM_m = transl_BOM_m + accumarray(buckets(valid), d_trsl(valid), [nSub, 1]);
-  cross_BOM_m  = cross_BOM_m  + accumarray(buckets(valid), d_cr(valid),   [nSub, 1]);
+% --- (3) BOM mode: lifecycle [t_ord, t_pay] (BOM-extended, conventional) ---
+% Same daily PAM machinery as bonds but starting at t_ord. By the
+% [F(1); diff(F)] formula's telescoping the cumulative collapses to
+% F(t_pay), so BOM and bonds end up identical at the cumulative level —
+% only per-quarter distribution differs. This is the "redistribution-only"
+% interpretation of BOM-extended CC.
+[d_tr_bom, d_trsl_bom, d_cr_bom] = lifecycleDailyContribs( ...
+  C, signFlow, t_ord, t_pay, a_path, b_path, a_PY, b_PY, discCurve);
+buckets_bom = d2s(t_ord:t_pay);
+valid_bom   = buckets_bom > 0;
+if any(valid_bom)
+  trans_BOM_m  = trans_BOM_m  + accumarray(buckets_bom(valid_bom), d_tr_bom(valid_bom),   [nSub, 1]);
+  transl_BOM_m = transl_BOM_m + accumarray(buckets_bom(valid_bom), d_trsl_bom(valid_bom), [nSub, 1]);
+  cross_BOM_m  = cross_BOM_m  + accumarray(buckets_bom(valid_bom), d_cr_bom(valid_bom),   [nSub, 1]);
+end
+
+% --- (4) BOMext mode: bonds + extra BOM-phase term (TI-BOM-like) ---
+% Cumulative per event = F(t_pay) + (F(t_rec) - F(t_ord)). Mirrors TI BOM:
+% the BOM-phase deviation enters as ADDITIONAL cumulative exposure rather
+% than just timing redistribution. Equivalent to the "deviation from PY
+% accumulated over the entire commitment period" interpretation of CC.
+%
+% Piece A: bonds-style contribution (identical to bonds mode above).
+[d_tr_A, d_trsl_A, d_cr_A] = lifecycleDailyContribs( ...
+  C, signFlow, t_rec, t_pay, a_path, b_path, a_PY, b_PY, discCurve);
+buckets_A = d2s(t_rec:t_pay);
+valid_A   = buckets_A > 0;
+if any(valid_A)
+  trans_BOMext_m  = trans_BOMext_m  + accumarray(buckets_A(valid_A), d_tr_A(valid_A),   [nSub, 1]);
+  transl_BOMext_m = transl_BOMext_m + accumarray(buckets_A(valid_A), d_trsl_A(valid_A), [nSub, 1]);
+  cross_BOMext_m  = cross_BOMext_m  + accumarray(buckets_A(valid_A), d_cr_A(valid_A),   [nSub, 1]);
+end
+%
+% Piece B: extra BOM-phase term = diff(F) over [t_ord+1, t_rec].
+% Reuses d_*_bom from BOM mode above (indices 2..nBOM+1 hold the diffs
+% corresponding to days t_ord+1..t_rec; d_*_bom(1) is the F(t_ord) initial
+% term we deliberately drop). Sums to F(t_rec) - F(t_ord) per component.
+nBOM = t_rec - t_ord;
+if nBOM > 0
+  d_tr_B   = d_tr_bom(2:nBOM+1);
+  d_trsl_B = d_trsl_bom(2:nBOM+1);
+  d_cr_B   = d_cr_bom(2:nBOM+1);
+  buckets_B = d2s((t_ord+1):t_rec);
+  valid_B   = buckets_B > 0;
+  if any(valid_B)
+    trans_BOMext_m  = trans_BOMext_m  + accumarray(buckets_B(valid_B), d_tr_B(valid_B),   [nSub, 1]);
+    transl_BOMext_m = transl_BOMext_m + accumarray(buckets_B(valid_B), d_trsl_B(valid_B), [nSub, 1]);
+    cross_BOMext_m  = cross_BOMext_m  + accumarray(buckets_B(valid_B), d_cr_B(valid_B),   [nSub, 1]);
+  end
 end
 
 end

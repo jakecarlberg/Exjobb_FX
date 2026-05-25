@@ -21,7 +21,7 @@
 % =========================================================================
 % SETTINGS
 % =========================================================================
-if ~exist('K',    'var'), K    = 1000; end
+if ~exist('K',    'var'), K    = 2; end
 
 % -------------------------------------------------------------------------
 % DISTRIBUTED RUN — optional, leave commented out to run all seeds locally
@@ -141,10 +141,14 @@ mc.CC_close_TI  = nan(K, nPeriods);
 mc.CC_close_OCI = nan(K, nPeriods);
 
 % --- Flow-restricted PAM CC (performanceAttributionFlowCC) ---------------
-% snap  = rate at recognition date  -- DISABLED (algebraically = industry CC TI)
-% bonds = rate over recognition -> payment window
-% BOM   = rate over order -> payment window
-for mode = {'bonds','BOM'}
+% snap   = rate at recognition date  -- DISABLED (algebraically = industry CC TI)
+% bonds  = rate over recognition -> payment window
+% BOM    = rate over order -> payment window (conventional CC semantics;
+%          cumulative identical to bonds — only timing redistributes)
+% BOMext = bonds + extra BOM-phase deviation accumulation (TI-BOM-like
+%          semantics; cumulative differs from bonds by the per-event
+%          F(t_rec)-F(t_ord) drift summed over all events)
+for mode = {'bonds','BOM','BOMext'}
   m = mode{1};
   for comp = {'trans','transl','cross','total'}
     mc.(sprintf('flowCC_%s_%s', m, comp{1})) = nan(K, nPeriods);
@@ -246,10 +250,12 @@ parfor ii = 1:length(seeds)
       'M1_CC_TI',    nan(1, nPeriods), 'M1_CC_OCI',    nan(1, nPeriods), ...
       'CC_avg_TI',   nan(1, nPeriods), 'CC_avg_OCI',   nan(1, nPeriods), ...
       'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods), ...
-      'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
-      'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
-      'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
-      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods), ...
+      'flowCC_bonds_trans',  nan(1, nPeriods), 'flowCC_bonds_transl',  nan(1, nPeriods), ...
+      'flowCC_bonds_cross',  nan(1, nPeriods), 'flowCC_bonds_total',   nan(1, nPeriods), ...
+      'flowCC_BOM_trans',    nan(1, nPeriods), 'flowCC_BOM_transl',    nan(1, nPeriods), ...
+      'flowCC_BOM_cross',    nan(1, nPeriods), 'flowCC_BOM_total',     nan(1, nPeriods), ...
+      'flowCC_BOMext_trans', nan(1, nPeriods), 'flowCC_BOMext_transl', nan(1, nPeriods), ...
+      'flowCC_BOMext_cross', nan(1, nPeriods), 'flowCC_BOMext_total',  nan(1, nPeriods), ...
       'actRevEUR',  nan(1, nYears_mc), 'actGMpct',  nan(1, nYears_mc), ...
       'netExpPct',  nan(nYears_mc, nCur_mc));
 
@@ -321,14 +327,18 @@ parfor ii = 1:length(seeds)
       % r.flowCC_snap_transl(1:Pf)  = fcc.snap.transl_quarterly(1:Pf)';
       % r.flowCC_snap_cross(1:Pf)   = fcc.snap.cross_quarterly(1:Pf)';
       % r.flowCC_snap_total(1:Pf)   = fcc.snap.total_quarterly(1:Pf)';
-      r.flowCC_bonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
-      r.flowCC_bonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
-      r.flowCC_bonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
-      r.flowCC_bonds_total(1:Pf)  = fcc.bonds.total_quarterly(1:Pf)';
-      r.flowCC_BOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
-      r.flowCC_BOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
-      r.flowCC_BOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
-      r.flowCC_BOM_total(1:Pf)    = fcc.BOM.total_quarterly(1:Pf)';
+      r.flowCC_bonds_trans(1:Pf)   = fcc.bonds.trans_quarterly(1:Pf)';
+      r.flowCC_bonds_transl(1:Pf)  = fcc.bonds.transl_quarterly(1:Pf)';
+      r.flowCC_bonds_cross(1:Pf)   = fcc.bonds.cross_quarterly(1:Pf)';
+      r.flowCC_bonds_total(1:Pf)   = fcc.bonds.total_quarterly(1:Pf)';
+      r.flowCC_BOM_trans(1:Pf)     = fcc.BOM.trans_quarterly(1:Pf)';
+      r.flowCC_BOM_transl(1:Pf)    = fcc.BOM.transl_quarterly(1:Pf)';
+      r.flowCC_BOM_cross(1:Pf)     = fcc.BOM.cross_quarterly(1:Pf)';
+      r.flowCC_BOM_total(1:Pf)     = fcc.BOM.total_quarterly(1:Pf)';
+      r.flowCC_BOMext_trans(1:Pf)  = fcc.BOMext.trans_quarterly(1:Pf)';
+      r.flowCC_BOMext_transl(1:Pf) = fcc.BOMext.transl_quarterly(1:Pf)';
+      r.flowCC_BOMext_cross(1:Pf)  = fcc.BOMext.cross_quarterly(1:Pf)';
+      r.flowCC_BOMext_total(1:Pf)  = fcc.BOMext.total_quarterly(1:Pf)';
 
     catch ME
       fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
@@ -372,7 +382,7 @@ for k = 1:K
   mc.M1_CC_TI(k,:)    = r.M1_CC_TI;    mc.M1_CC_OCI(k,:)    = r.M1_CC_OCI;
   mc.CC_avg_TI(k,:)   = r.CC_avg_TI;   mc.CC_avg_OCI(k,:)   = r.CC_avg_OCI;
   mc.CC_close_TI(k,:) = r.CC_close_TI; mc.CC_close_OCI(k,:) = r.CC_close_OCI;
-  for mode = {'bonds','BOM'}   % 'snap' DISABLED
+  for mode = {'bonds','BOM','BOMext'}   % 'snap' DISABLED
     m = mode{1};
     for comp = {'trans','transl','cross','total'}
       fn = sprintf('flowCC_%s_%s', m, comp{1});
@@ -593,6 +603,7 @@ M2q_TI_q     = qV('M2q_TI');   M2q_OCI_q = qV('M2q_OCI');
 % fSnap_q      = qV('flowCC_snap_total');   % snap mode DISABLED
 fBonds_q     = qV('flowCC_bonds_total');
 fBOM_q       = qV('flowCC_BOM_total');
+fBOMext_q    = qV('flowCC_BOMext_total');   % TI-BOM-like CC (bonds + extra BOM-phase)
 M1_CC_q      = qV('M1_CC_TI')    + qV('M1_CC_OCI');
 CC_avg_q     = qV('CC_avg_TI')   + qV('CC_avg_OCI');
 CC_close_q   = qV('CC_close_TI') + qV('CC_close_OCI');
@@ -820,6 +831,7 @@ ccQx = 1:ccNP;
 % Filtered CC matrices [nValid x ccNP]
 fBonds_cc   = fBonds_q(:, ccMask);
 fBOM_cc     = fBOM_q(:, ccMask);
+fBOMext_cc  = fBOMext_q(:, ccMask);   % TI-BOM-like CC (bonds + extra BOM-phase)
 M1_CC_cc    = M1_CC_q(:, ccMask);
 CC_avg_cc   = CC_avg_q(:, ccMask);
 CC_close_cc = CC_close_q(:, ccMask);
@@ -829,8 +841,8 @@ N_obs_cc    = nValid * ccNP;
 fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
 fprintf('(2008 onwards; 2007 excluded — no prior-year CNY rates available)\n');
 printActualTable( ...
-  {'PAM bonds','PAM BOM','M1 CC','CC avg','CC close'}, ...
-  {fBonds_cc, fBOM_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
+  {'PAM bonds','PAM BOM','PAM BOMext','M1 CC','CC avg','CC close'}, ...
+  {fBonds_cc, fBOM_cc, fBOMext_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
   ccPD, ccNP);
 
 % --- 3b. Error table — PAM bonds (flow) benchmark ------------------------
@@ -846,13 +858,29 @@ printRow('M1 CC          vs  CC avg',   M1_CC_cc,  CC_avg_cc);
 printRow('M1 CC          vs  CC close', M1_CC_cc,  CC_close_cc);
 printRow('CC avg         vs  CC close', CC_avg_cc, CC_close_cc);
 
-% --- 3c. Error table — PAM BOM (flow) benchmark --------------------------
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOM (flow)\n');
+% --- 3c. Error table — PAM BOM (flow, conventional) benchmark ------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOM (flow, redistribution-only)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
 printRow('PAM BOM        vs  M1 CC',    M1_CC_cc,  fBOM_cc);
 printRow('PAM BOM        vs  CC avg',   CC_avg_cc, fBOM_cc);
 printRow('PAM BOM        vs  CC close', CC_close_cc, fBOM_cc);
+
+% --- 3d. Error table — PAM BOMext (flow, TI-BOM-like) benchmark ----------
+% BOMext cumulative = bonds + (per-event F(t_rec) - F(t_ord)) summed,
+% mirroring TI BOM's structure. Industry CC vs BOMext shows the "true"
+% economic CC gap under the holistic deviation-over-commitment-period
+% interpretation.
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOMext (flow, TI-BOM-like)\n');
+fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
+printHeader();
+printRow('PAM BOMext     vs  M1 CC',    M1_CC_cc,    fBOMext_cc);
+printRow('PAM BOMext     vs  CC avg',   CC_avg_cc,   fBOMext_cc);
+printRow('PAM BOMext     vs  CC close', CC_close_cc, fBOMext_cc);
+fprintf('%s\n', repmat('-',1,112));
+fprintf('  PAM mode comparisons\n');
+printRow('PAM BOMext     vs  PAM bonds', fBOMext_cc, fBonds_cc);  % size of BOM-phase extension
+printRow('PAM BOMext     vs  PAM BOM',   fBOMext_cc, fBOM_cc);
 
 err_BOM_M1    = (M1_CC_cc    - fBOM_cc)   / 1e6;
 err_BOM_avg   = (CC_avg_cc   - fBOM_cc)   / 1e6;
@@ -860,11 +888,15 @@ err_BOM_close = (CC_close_cc - fBOM_cc)   / 1e6;
 err_bonds_M1  = (M1_CC_cc    - fBonds_cc) / 1e6;
 err_bonds_avg = (CC_avg_cc   - fBonds_cc) / 1e6;
 err_bonds_close = (CC_close_cc - fBonds_cc) / 1e6;
+err_BOMext_M1    = (M1_CC_cc    - fBOMext_cc) / 1e6;
+err_BOMext_avg   = (CC_avg_cc   - fBOMext_cc) / 1e6;
+err_BOMext_close = (CC_close_cc - fBOMext_cc) / 1e6;
 
 % --- Figure 19: CC mean per quarter (2008+) --------------------------------
 fig = figure(19); clf; hold on;
 plot(ccQx, mu(fBOM_cc),     '-o',  'Color',cPAM,  'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM BOM');
 plot(ccQx, mu(fBonds_cc),   '--s', 'Color',cPAM,  'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(ccQx, mu(fBOMext_cc),  ':d',  'Color',cPAM,  'LineWidth',1.0,'MarkerSize',3,'DisplayName','PAM BOMext');
 plot(ccQx, mu(M1_CC_cc),    '-o',  'Color',cM1,   'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
 plot(ccQx, mu(CC_avg_cc),   '-o',  'Color',cCCavg,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
 plot(ccQx, mu(CC_close_cc), '-o',  'Color',cCCcls,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
@@ -878,6 +910,7 @@ saveas(fig, fullfile(figDir,'CC_actual.pdf'));
 fig = figure(20); clf; hold on;
 plot(ccQx, cumsum(mu(fBOM_cc)),     '-o',  'Color',cPAM,  'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM BOM');
 plot(ccQx, cumsum(mu(fBonds_cc)),   '--s', 'Color',cPAM,  'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(ccQx, cumsum(mu(fBOMext_cc)),  ':d',  'Color',cPAM,  'LineWidth',1.0,'MarkerSize',3,'DisplayName','PAM BOMext');
 plot(ccQx, cumsum(mu(M1_CC_cc)),    '-o',  'Color',cM1,   'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
 plot(ccQx, cumsum(mu(CC_avg_cc)),   '-o',  'Color',cCCavg,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
 plot(ccQx, cumsum(mu(CC_close_cc)), '-o',  'Color',cCCcls,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
