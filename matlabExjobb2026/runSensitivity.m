@@ -143,11 +143,9 @@ results.baseline    = baseline;
 
 methodsTI       = {'M1','M2w','M2m','M2q'};
 methodsOCI      = {'M1','M2w','M2m','M2q'};
-methodsCC        = {'M1_CC','CC_avg','CC_close','PAM_bonds'};   % vs flowCC_BOM_total benchmark
-methodsCC_bonds  = {'M1_CC','CC_avg','CC_close'};               % vs flowCC_bonds_total benchmark
+methodsCC        = {'M1_CC','CC_avg','CC_close','PAM_bonds'};   % vs flowCC_BOM_total benchmark (t_ord-anchored)
+methodsCC_bonds  = {'M1_CC','CC_avg','CC_close'};               % vs flowCC_bonds_total benchmark (t_rec-anchored)
                                                                 % (PAM_bonds would be the benchmark itself)
-methodsCC_bomext = {'M1_CC','CC_avg','CC_close','PAM_bonds'};   % vs flowCC_BOMext_total benchmark
-                                                                % (TI-BOM-like CC: bonds + extra BOM-phase)
 
 for m = methodsTI
   % vs PAM FX_trans (bonds-only, monetary-item TI)
@@ -168,10 +166,6 @@ end
 for m = methodsCC_bonds
   results.rmse_CC_bonds.(m{1}) = nan(nParams, nScales);
   results.me_CC_bonds.(m{1})   = nan(nParams, nScales);
-end
-for m = methodsCC_bomext
-  results.rmse_CC_bomext.(m{1}) = nan(nParams, nScales);
-  results.me_CC_bomext.(m{1})   = nan(nParams, nScales);
 end
 
 % =========================================================================
@@ -291,13 +285,6 @@ parfor ii = 1:nRun
     if ~isfield(rLoaded, 'fBOM_trans'),     rLoaded.fBOM_trans     = nan(1,nP); end
     if ~isfield(rLoaded, 'fBOM_transl'),    rLoaded.fBOM_transl    = nan(1,nP); end
     if ~isfield(rLoaded, 'fBOM_cross'),     rLoaded.fBOM_cross     = nan(1,nP); end
-    % BOMext added after initial K=100 / K=200 runs — patch old checkpoints
-    % so the aggregation loop doesn't error on missing fields. Cells loaded
-    % from pre-BOMext checkpoints will produce NaN in rmse_CC_bomext etc.
-    if ~isfield(rLoaded, 'fBOMext'),        rLoaded.fBOMext        = nan(1,nP); end
-    if ~isfield(rLoaded, 'fBOMext_trans'),  rLoaded.fBOMext_trans  = nan(1,nP); end
-    if ~isfield(rLoaded, 'fBOMext_transl'), rLoaded.fBOMext_transl = nan(1,nP); end
-    if ~isfield(rLoaded, 'fBOMext_cross'),  rLoaded.fBOMext_cross  = nan(1,nP); end
     runResults{ii} = rLoaded;
     if ~isempty(dq)
       send(dq, struct('paramKey',task.paramKey,'s',task.s,'k',task.k,'tag','cached'));
@@ -322,13 +309,10 @@ parfor ii = 1:nRun
     'M1_CC',        nan(1,nPeriods), 'CC_avg',       nan(1,nPeriods), ...
     'CC_close',     nan(1,nPeriods), ...
     'fBonds',       nan(1,nPeriods), 'fBOM',         nan(1,nPeriods), ...
-    'fBOMext',      nan(1,nPeriods), ...
     'fBonds_trans', nan(1,nPeriods), 'fBonds_transl',nan(1,nPeriods), ...
     'fBonds_cross', nan(1,nPeriods), ...
     'fBOM_trans',   nan(1,nPeriods), 'fBOM_transl',  nan(1,nPeriods), ...
-    'fBOM_cross',   nan(1,nPeriods), ...
-    'fBOMext_trans',nan(1,nPeriods), 'fBOMext_transl',nan(1,nPeriods), ...
-    'fBOMext_cross',nan(1,nPeriods));
+    'fBOM_cross',   nan(1,nPeriods));
 
   try
     createMatFilesSim(dm, task.k, false, wFolder, sandvikArrays, task.timingOverride);
@@ -364,20 +348,18 @@ parfor ii = 1:nRun
 
     fcc = performanceAttributionFlowCC(dm, dc, pnl);
     Pf  = min(length(fcc.bonds.total_quarterly), nPeriods);
-    % Totals (used as CC benchmarks); keep historical fBonds/fBOM names.
-    r.fBonds(1:Pf)  = fcc.bonds.total_quarterly(1:Pf)';
-    r.fBOM(1:Pf)    = fcc.BOM.total_quarterly(1:Pf)';
-    r.fBOMext(1:Pf) = fcc.BOMext.total_quarterly(1:Pf)';   % TI-BOM-like CC
-    % Sub-components (mirrors runMC's flowCC_{bonds,BOM,BOMext}_{trans,transl,cross}).
-    r.fBonds_trans(1:Pf)   = fcc.bonds.trans_quarterly(1:Pf)';
-    r.fBonds_transl(1:Pf)  = fcc.bonds.transl_quarterly(1:Pf)';
-    r.fBonds_cross(1:Pf)   = fcc.bonds.cross_quarterly(1:Pf)';
-    r.fBOM_trans(1:Pf)     = fcc.BOM.trans_quarterly(1:Pf)';
-    r.fBOM_transl(1:Pf)    = fcc.BOM.transl_quarterly(1:Pf)';
-    r.fBOM_cross(1:Pf)     = fcc.BOM.cross_quarterly(1:Pf)';
-    r.fBOMext_trans(1:Pf)  = fcc.BOMext.trans_quarterly(1:Pf)';
-    r.fBOMext_transl(1:Pf) = fcc.BOMext.transl_quarterly(1:Pf)';
-    r.fBOMext_cross(1:Pf)  = fcc.BOMext.cross_quarterly(1:Pf)';
+    % Totals (used as CC benchmarks).
+    %   fBonds = t_rec-anchored, recognition→payment lifecycle
+    %   fBOM   = t_ord-anchored, order→payment lifecycle
+    r.fBonds(1:Pf) = fcc.bonds.total_quarterly(1:Pf)';
+    r.fBOM(1:Pf)   = fcc.BOM.total_quarterly(1:Pf)';
+    % Sub-components (mirrors runMC's flowCC_{bonds,BOM}_{trans,transl,cross}).
+    r.fBonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
+    r.fBonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
+    r.fBonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
+    r.fBOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
+    r.fBOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
+    r.fBOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
   catch ME
     fprintf(2, '\n  task %d (%s s=%.2f seed=%d) ERROR: %s\n', ...
       t, task.paramKey, task.s, task.k, ME.message);
@@ -423,7 +405,6 @@ for pi = 1:nParams
     CC_close   = nan(K, nPeriods);
     fBonds     = nan(K, nPeriods);
     fBOM       = nan(K, nPeriods);
-    fBOMext    = nan(K, nPeriods);
 
     for k = 1:K
       r = allResults{base + k};
@@ -440,7 +421,6 @@ for pi = 1:nParams
       CC_close(k,:) = r.CC_close;
       fBonds(k,:)   = r.fBonds;
       fBOM(k,:)     = r.fBOM;
-      fBOMext(k,:)  = r.fBOMext;
     end
 
     % Original valid mask — only requires fields needed for legacy metrics.
@@ -477,29 +457,19 @@ for pi = 1:nParams
     results.rmse_CC.CC_close(pi,si)  = rmse(fBOM, CC_close); results.me_CC.CC_close(pi,si)  = me(fBOM, CC_close);
     results.rmse_CC.PAM_bonds(pi,si) = rmse(fBOM, fBonds);   results.me_CC.PAM_bonds(pi,si) = me(fBOM, fBonds);
 
-    % CC vs PAM bonds-flow (recognised-only CC). What M1/M2 CC variants ARE trying to track.
+    % CC vs PAM bonds-flow (t_rec-anchored).
     results.rmse_CC_bonds.M1_CC(pi,si)    = rmse(fBonds, M1_CC);    results.me_CC_bonds.M1_CC(pi,si)    = me(fBonds, M1_CC);
     results.rmse_CC_bonds.CC_avg(pi,si)   = rmse(fBonds, CC_avg);   results.me_CC_bonds.CC_avg(pi,si)   = me(fBonds, CC_avg);
     results.rmse_CC_bonds.CC_close(pi,si) = rmse(fBonds, CC_close); results.me_CC_bonds.CC_close(pi,si) = me(fBonds, CC_close);
 
-    % CC vs PAM BOMext-flow (TI-BOM-like CC: bonds + extra BOM-phase).
-    % This is the alternative CC benchmark that captures BOM-phase deviation
-    % as additional cumulative exposure (mirroring TI BOM structure).
-    results.rmse_CC_bomext.M1_CC(pi,si)     = rmse(fBOMext, M1_CC);    results.me_CC_bomext.M1_CC(pi,si)     = me(fBOMext, M1_CC);
-    results.rmse_CC_bomext.CC_avg(pi,si)    = rmse(fBOMext, CC_avg);   results.me_CC_bomext.CC_avg(pi,si)    = me(fBOMext, CC_avg);
-    results.rmse_CC_bomext.CC_close(pi,si)  = rmse(fBOMext, CC_close); results.me_CC_bomext.CC_close(pi,si)  = me(fBOMext, CC_close);
-    results.rmse_CC_bomext.PAM_bonds(pi,si) = rmse(fBOMext, fBonds);   results.me_CC_bomext.PAM_bonds(pi,si) = me(fBOMext, fBonds);
-
     fprintf(['[%s s=%.2f] RMSE TI/M1 bonds=%.1fM  BOM=%.1fM | OCI/M1=%.1fM | ' ...
-             'CC/M1 bonds=%.1fM  BOM=%.1fM  BOMext=%.1fM | BOM-phase=%.1fM  BOMext-size=%.1fM\n'], ...
+             'CC/M1 bonds=%.1fM  BOM=%.1fM | bonds-vs-BOM=%.1fM\n'], ...
       paramKey, s, ...
       results.rmse_TI.M1(pi,si)/1e6, results.rmse_TI_BOM.M1(pi,si)/1e6, ...
       results.rmse_OCI.M1(pi,si)/1e6, ...
       results.rmse_CC_bonds.M1_CC(pi,si)/1e6, ...
       results.rmse_CC.M1_CC(pi,si)/1e6, ...
-      results.rmse_CC_bomext.M1_CC(pi,si)/1e6, ...
-      results.rmse_CC.PAM_bonds(pi,si)/1e6, ...
-      results.rmse_CC_bomext.PAM_bonds(pi,si)/1e6);
+      results.rmse_CC.PAM_bonds(pi,si)/1e6);
   end
 end
 
@@ -540,15 +510,11 @@ for pi = 1:nParams
   printRMSErow('OCI/M2m',           results.rmse_OCI.M2m(pi,:),     nScales);
   printRMSErow('CC/M1   vs BOM',    results.rmse_CC.M1_CC(pi,:),    nScales);
   printRMSErow('CC/M1   vs bonds',  results.rmse_CC_bonds.M1_CC(pi,:),  nScales);
-  printRMSErow('CC/M1   vs BOMext', results.rmse_CC_bomext.M1_CC(pi,:), nScales);
   printRMSErow('CC/avg  vs BOM',    results.rmse_CC.CC_avg(pi,:),   nScales);
   printRMSErow('CC/avg  vs bonds',  results.rmse_CC_bonds.CC_avg(pi,:), nScales);
-  printRMSErow('CC/avg  vs BOMext', results.rmse_CC_bomext.CC_avg(pi,:),nScales);
   printRMSErow('CC/close vs BOM',   results.rmse_CC.CC_close(pi,:), nScales);
   printRMSErow('CC/close vs bonds', results.rmse_CC_bonds.CC_close(pi,:), nScales);
-  printRMSErow('CC/close vs BOMext',results.rmse_CC_bomext.CC_close(pi,:),nScales);
-  printRMSErow('CC bonds vs BOM',   results.rmse_CC.PAM_bonds(pi,:),nScales);     % conventional BOM-phase size
-  printRMSErow('CC bonds vs BOMext',results.rmse_CC_bomext.PAM_bonds(pi,:),nScales);  % TI-BOM-like extension size
+  printRMSErow('CC bonds vs BOM',   results.rmse_CC.PAM_bonds(pi,:),nScales);     % size of anchor difference
 end
 
 % =========================================================================
@@ -616,17 +582,15 @@ for pi = 1:nParams
   xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
   title('TI vs PAM bonds+BOM (FX\_trans\_BOM)'); legend('Location','Best');
 
-  % --- Row 2, Col 2: CC vs PAM BOMext-flow (TI-BOM-like CC) ---
-  % BOMext = bonds + extra BOM-phase deviation accumulation per event.
-  % Mirrors the structure of TI BOM (cumulative grows with BOM exposure)
-  % rather than the conventional BOM mode (cumulative same as bonds).
-  subplot(2,3,5); hold on;
-  plot(scalings, results.rmse_CC_bomext.M1_CC(pi,:)/1e6,     '-o', 'Color',cM1,    'LineWidth',1.6,'DisplayName','M1 CC');
-  plot(scalings, results.rmse_CC_bomext.CC_avg(pi,:)/1e6,    '-o', 'Color',cCCavg, 'LineWidth',1.6,'DisplayName','CC avg');
-  plot(scalings, results.rmse_CC_bomext.CC_close(pi,:)/1e6,  '-o', 'Color',cCCcls, 'LineWidth',1.6,'DisplayName','CC close');
-  plot(scalings, results.rmse_CC_bomext.PAM_bonds(pi,:)/1e6, '-o', 'Color',cPAM,   'LineWidth',1.6,'DisplayName','PAM bonds');
-  xlabel('Scaling s'); ylabel('RMSE (SEK million)'); grid on;
-  title('CC vs PAM BOMext (TI-BOM-like)'); legend('Location','Best');
+  % --- Row 2, Col 2: legend / annotation slot ---
+  subplot(2,3,5); axis off;
+  text(0.5, 0.5, sprintf(['Row 1: accounting-comparable benchmarks\n' ...
+                          '(what M1/M2 try to track)\n\n' ...
+                          'Row 2: full PAM benchmarks\n' ...
+                          '(what M1/M2 structurally cannot track)\n\n' ...
+                          'Gap = BOM-phase exposure size']), ...
+       'HorizontalAlignment','center', 'VerticalAlignment','middle', ...
+       'FontSize',9);
 
   % --- Row 2, Col 3: CC vs PAM bonds-flow (recognised-only CC) ---
   subplot(2,3,6); hold on;
