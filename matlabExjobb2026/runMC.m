@@ -1011,6 +1011,11 @@ function printErrRow(label, A, B)
 end
 
 function plotSilvermanKDE(ax, e, lbl, col)
+  e = e(~isnan(e));
+  if isempty(e) || std(e) == 0
+    fprintf('  [KDE skipped — no valid data for "%s"]\n', lbl);
+    return;
+  end
   N  = numel(e);
   s  = std(e);
   h  = 0.9 * min(s, iqr(e)/1.34) * N^(-1/5);

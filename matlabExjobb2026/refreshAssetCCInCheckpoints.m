@@ -163,6 +163,11 @@ parfor ii = 1:length(seedsToProcess)
     saveCheckpoint(ckptFile, r);
   catch ME
     fprintf(2, '  seed %d: ERROR: %s\n', k, ME.message);
+    fprintf(2, '  seed %d: identifier: %s\n', k, ME.identifier);
+    for s = 1:length(ME.stack)
+      fprintf(2, '    at %s (line %d) in %s\n', ...
+        ME.stack(s).name, ME.stack(s).line, ME.stack(s).file);
+    end
   end
 
   if ~isempty(dq), send(dq, k); end
