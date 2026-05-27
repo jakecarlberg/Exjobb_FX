@@ -21,7 +21,8 @@
 % =========================================================================
 % SETTINGS
 % =========================================================================
-if ~exist('K',    'var'), K    = 5000; end
+set(0, 'DefaultFigureWindowStyle', 'normal');  % avoid "can't set up window when docked" on formatFig
+if ~exist('K',    'var'), K    = 50; end
 
 % -------------------------------------------------------------------------
 % DISTRIBUTED RUN — optional, leave commented out to run all seeds locally
@@ -108,14 +109,11 @@ mc.netExpPct  = nan(K, nYears_mc, nCur_mc); % net FX exposure % per year per cur
 mc.FX_trans       = nan(K, nPeriods);   % Transactional FX — Bonds only
 mc.FX_trans_BOM   = nan(K, nPeriods);   % Transactional FX — Bonds + BOM
 mc.FX_transl      = nan(K, nPeriods);   % Translation FX per quarter
-% --- Stock-based PAM CC DISABLED (flow-restricted BOM is the truth) ------
-% mc.FX_cc_total    = nan(K, nPeriods);   % CC Total per quarter
-% mc.FX_cc_trans    = nan(K, nPeriods);   % CC Pure Transaction (foreign rates frozen)
-% mc.FX_cc_transl   = nan(K, nPeriods);   % CC Pure Translation (EUR/SEK frozen)
-% mc.FX_cc_cross    = nan(K, nPeriods);   % CC Cross-rate term
-% mc.FX_trans_CC_LY  = nan(K, nPeriods);
-% mc.FX_transl_CC_LY = nan(K, nPeriods);
-% mc.FX_cc_LY_total  = nan(K, nPeriods);
+% --- Full-portfolio PAM CC and LY-daily variants DISABLED --------------
+% Not used in current analysis; only restricted-scope PAM CC (pamCC_*)
+% is computed via performanceAttributionAssetCC below.
+% mc.FX_cc_total/trans/transl/cross  -- full portfolio, rolling PY
+% mc.FX_trans_CC_LY / FX_transl_CC_LY / FX_cc_LY_total  -- LY daily anchor
 
 % --- Method 1 (actual daily rate) ----------------------------------------
 mc.M1_TI  = nan(K, nPeriods);   % Transactional Impact
@@ -140,17 +138,18 @@ mc.CC_avg_OCI   = nan(K, nPeriods);
 mc.CC_close_TI  = nan(K, nPeriods);
 mc.CC_close_OCI = nan(K, nPeriods);
 
-% --- Flow-restricted PAM CC (performanceAttributionFlowCC) ---------------
-% snap  = rate at recognition date  -- DISABLED (algebraically = industry CC TI)
-% bonds = lifecycle [t_rec, t_pay] anchored at t_rec's PY
-%         (deviation from PY rates at recognition month)
-% BOM   = lifecycle [t_ord, t_pay] anchored at t_ord's PY
-%         (deviation from PY rates at order month — substantively
-%          different from bonds; cumulatives generally do NOT match)
+% --- PAM CC via assets (performanceAttributionAssetCC) ------------------
+% Rolling per-day PY anchor only (current_month-12 average).
+% Two scopes:
+%   bonds = walk dc.assets.indBond           (AR + AP zero coupon bonds)
+%   BOM   = walk dc.assets.indBond + indManufactured (bonds + Component+Product BOMs)
+% Computes hI × Pbar from PAM's pricing (clsPriceBond / clsPriceBOM); no
+% new pricing introduced. Per-asset F-functions over each asset's lifetime
+% with maturity-day pull-to-par extension.
 for mode = {'bonds','BOM'}
   m = mode{1};
   for comp = {'trans','transl','cross','total'}
-    mc.(sprintf('flowCC_%s_%s', m, comp{1})) = nan(K, nPeriods);
+    mc.(sprintf('pamCC_%s_%s', m, comp{1})) = nan(K, nPeriods);
   end
 end
 
@@ -237,7 +236,7 @@ parfor ii = 1:length(seeds)
     localSettings            = settings;
     localSettings.dataFolder = wFolder;
 
-    % DISABLED: stock-based PAM CC (FX_cc_*, FX_*_CC_LY, FX_cc_LY_total)
+    % DISABLED: PAM CC LY daily (FX_*_CC_LY, FX_cc_LY_total)
     %           snap mode of flow CC (flowCC_snap_*)
     r = struct( ...
       'FX_trans',      nan(1, nPeriods), 'FX_trans_BOM',  nan(1, nPeriods), ...
@@ -249,10 +248,10 @@ parfor ii = 1:length(seeds)
       'M1_CC_TI',    nan(1, nPeriods), 'M1_CC_OCI',    nan(1, nPeriods), ...
       'CC_avg_TI',   nan(1, nPeriods), 'CC_avg_OCI',   nan(1, nPeriods), ...
       'CC_close_TI', nan(1, nPeriods), 'CC_close_OCI', nan(1, nPeriods), ...
-      'flowCC_bonds_trans', nan(1, nPeriods), 'flowCC_bonds_transl', nan(1, nPeriods), ...
-      'flowCC_bonds_cross', nan(1, nPeriods), 'flowCC_bonds_total',  nan(1, nPeriods), ...
-      'flowCC_BOM_trans',   nan(1, nPeriods), 'flowCC_BOM_transl',   nan(1, nPeriods), ...
-      'flowCC_BOM_cross',   nan(1, nPeriods), 'flowCC_BOM_total',    nan(1, nPeriods), ...
+      'pamCC_bonds_trans', nan(1, nPeriods), 'pamCC_bonds_transl', nan(1, nPeriods), ...
+      'pamCC_bonds_cross', nan(1, nPeriods), 'pamCC_bonds_total',  nan(1, nPeriods), ...
+      'pamCC_BOM_trans',   nan(1, nPeriods), 'pamCC_BOM_transl',   nan(1, nPeriods), ...
+      'pamCC_BOM_cross',   nan(1, nPeriods), 'pamCC_BOM_total',    nan(1, nPeriods), ...
       'actRevEUR',  nan(1, nYears_mc), 'actGMpct',  nan(1, nYears_mc), ...
       'netExpPct',  nan(nYears_mc, nCur_mc));
 
@@ -284,14 +283,9 @@ parfor ii = 1:length(seeds)
           r.FX_transl(p)    = sum(dr.dFX_transl(idx));
         end
       end
-      % --- Stock-based PAM CC DISABLED (replaced by flow-restricted BOM) -
-      % r.FX_cc_total      = dr.FX_cc_total_quarterly(:)';
-      % r.FX_cc_trans      = dr.FX_cc_trans_quarterly(:)';
-      % r.FX_cc_transl     = dr.FX_cc_transl_quarterly(:)';
-      % r.FX_cc_cross      = dr.FX_cc_cross_quarterly(:)';
-      % r.FX_trans_CC_LY   = dr.FX_trans_CC_LY_quarterly(:)';
-      % r.FX_transl_CC_LY  = dr.FX_transl_CC_LY_quarterly(:)';
-      % r.FX_cc_LY_total   = dr.FX_cc_LY_total_quarterly(:)';
+      % --- Full-portfolio PAM CC DISABLED (not used in current analysis)
+      % r.FX_cc_total / trans / transl / cross are computed by performanceAttribution
+      % but only restricted-scope pamCC_* (below) is captured to checkpoint.
 
       % --- Shared accounting core -----------------------------------------
       bs  = buildBalanceSheet(dm, dc);
@@ -317,21 +311,17 @@ parfor ii = 1:length(seeds)
       r.CC_close_TI(1:P) = m1.cc.close.quarterly_TI(1:P)';
       r.CC_close_OCI(1:P)= m1.cc.close.quarterly_OCI(1:P)';
 
-      % --- Flow-restricted PAM CC (bonds / BOM; snap DISABLED) -----------
-      fcc = performanceAttributionFlowCC(dm, dc, pnl);
-      Pf  = min(length(fcc.bonds.total_quarterly), nPeriods);
-      % r.flowCC_snap_trans(1:Pf)   = fcc.snap.trans_quarterly(1:Pf)';
-      % r.flowCC_snap_transl(1:Pf)  = fcc.snap.transl_quarterly(1:Pf)';
-      % r.flowCC_snap_cross(1:Pf)   = fcc.snap.cross_quarterly(1:Pf)';
-      % r.flowCC_snap_total(1:Pf)   = fcc.snap.total_quarterly(1:Pf)';
-      r.flowCC_bonds_trans(1:Pf)  = fcc.bonds.trans_quarterly(1:Pf)';
-      r.flowCC_bonds_transl(1:Pf) = fcc.bonds.transl_quarterly(1:Pf)';
-      r.flowCC_bonds_cross(1:Pf)  = fcc.bonds.cross_quarterly(1:Pf)';
-      r.flowCC_bonds_total(1:Pf)  = fcc.bonds.total_quarterly(1:Pf)';
-      r.flowCC_BOM_trans(1:Pf)    = fcc.BOM.trans_quarterly(1:Pf)';
-      r.flowCC_BOM_transl(1:Pf)   = fcc.BOM.transl_quarterly(1:Pf)';
-      r.flowCC_BOM_cross(1:Pf)    = fcc.BOM.cross_quarterly(1:Pf)';
-      r.flowCC_BOM_total(1:Pf)    = fcc.BOM.total_quarterly(1:Pf)';
+      % --- PAM CC via assets (asset-walk, rolling PY anchor) -----------
+      pcc = performanceAttributionAssetCC(dm, dc, dp, pnl);
+      Pa  = min(length(pcc.bonds.total_quarterly), nPeriods);
+      r.pamCC_bonds_trans(1:Pa)  = pcc.bonds.trans_quarterly(1:Pa)';
+      r.pamCC_bonds_transl(1:Pa) = pcc.bonds.transl_quarterly(1:Pa)';
+      r.pamCC_bonds_cross(1:Pa)  = pcc.bonds.cross_quarterly(1:Pa)';
+      r.pamCC_bonds_total(1:Pa)  = pcc.bonds.total_quarterly(1:Pa)';
+      r.pamCC_BOM_trans(1:Pa)    = pcc.BOM.trans_quarterly(1:Pa)';
+      r.pamCC_BOM_transl(1:Pa)   = pcc.BOM.transl_quarterly(1:Pa)';
+      r.pamCC_BOM_cross(1:Pa)    = pcc.BOM.cross_quarterly(1:Pa)';
+      r.pamCC_BOM_total(1:Pa)    = pcc.BOM.total_quarterly(1:Pa)';
 
     catch ME
       fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
@@ -362,12 +352,9 @@ for k = 1:K
   mc.netExpPct(k,:,:)  = r.netExpPct;
   mc.FX_trans(k,:)      = r.FX_trans;      mc.FX_trans_BOM(k,:)  = r.FX_trans_BOM;
   mc.FX_transl(k,:)     = r.FX_transl;
-  % --- Stock-based PAM CC DISABLED --------------------------------------
-  % mc.FX_cc_total(k,:)   = r.FX_cc_total;   mc.FX_cc_trans(k,:)   = r.FX_cc_trans;
-  % mc.FX_cc_transl(k,:)  = r.FX_cc_transl;  mc.FX_cc_cross(k,:)   = r.FX_cc_cross;
-  % mc.FX_trans_CC_LY(k,:) = r.FX_trans_CC_LY;
-  % mc.FX_transl_CC_LY(k,:)= r.FX_transl_CC_LY;
-  % mc.FX_cc_LY_total(k,:) = r.FX_cc_LY_total;
+  % --- Full-portfolio PAM CC (rolling) ----------------------------------
+  % --- Full-portfolio PAM CC and LY-daily DISABLED ---------------------
+  % Not captured to mc; only restricted-scope pamCC_* (scatter below) is used.
   mc.M1_TI(k,:)    = r.M1_TI;    mc.M1_OCI(k,:)    = r.M1_OCI;
   mc.M2w_TI(k,:)   = r.M2w_TI;   mc.M2w_OCI(k,:)   = r.M2w_OCI;
   mc.M2m_TI(k,:)   = r.M2m_TI;   mc.M2m_OCI(k,:)   = r.M2m_OCI;
@@ -375,11 +362,12 @@ for k = 1:K
   mc.M1_CC_TI(k,:)    = r.M1_CC_TI;    mc.M1_CC_OCI(k,:)    = r.M1_CC_OCI;
   mc.CC_avg_TI(k,:)   = r.CC_avg_TI;   mc.CC_avg_OCI(k,:)   = r.CC_avg_OCI;
   mc.CC_close_TI(k,:) = r.CC_close_TI; mc.CC_close_OCI(k,:) = r.CC_close_OCI;
-  for mode = {'bonds','BOM'}   % 'snap' DISABLED
+  % Scatter PAM CC via assets (rolling PY anchor): 2 scopes × 4 components
+  for mode = {'bonds','BOM'}
     m = mode{1};
     for comp = {'trans','transl','cross','total'}
-      fn = sprintf('flowCC_%s_%s', m, comp{1});
-      mc.(fn)(k,:) = r.(fn);
+      fn = sprintf('pamCC_%s_%s', m, comp{1});
+      if isfield(r, fn), mc.(fn)(k,:) = r.(fn); end
     end
   end
 end
@@ -593,12 +581,12 @@ M1_TI_q      = qV('M1_TI');    M1_OCI_q  = qV('M1_OCI');
 M2w_TI_q     = qV('M2w_TI');   M2w_OCI_q = qV('M2w_OCI');
 M2m_TI_q     = qV('M2m_TI');   M2m_OCI_q = qV('M2m_OCI');
 M2q_TI_q     = qV('M2q_TI');   M2q_OCI_q = qV('M2q_OCI');
-% fSnap_q      = qV('flowCC_snap_total');   % snap mode DISABLED
-fBonds_q     = qV('flowCC_bonds_total');    % t_rec-anchored, recognition→payment
-fBOM_q       = qV('flowCC_BOM_total');      % t_ord-anchored, order→payment
 M1_CC_q      = qV('M1_CC_TI')    + qV('M1_CC_OCI');
 CC_avg_q     = qV('CC_avg_TI')   + qV('CC_avg_OCI');
 CC_close_q   = qV('CC_close_TI') + qV('CC_close_OCI');
+% --- PAM CC via assets (rolling PY anchor) -------------------------------
+pBonds_q     = qV('pamCC_bonds_total');    % bonds-only scope
+pBOM_q       = qV('pamCC_BOM_total');      % bonds + manufactured scope
 
 N_obs = nValid * nPeriods;
 
@@ -821,11 +809,11 @@ end
 ccQx = 1:ccNP;
 
 % Filtered CC matrices [nValid x ccNP]
-fBonds_cc   = fBonds_q(:, ccMask);
-fBOM_cc     = fBOM_q(:, ccMask);
 M1_CC_cc    = M1_CC_q(:, ccMask);
 CC_avg_cc   = CC_avg_q(:, ccMask);
 CC_close_cc = CC_close_q(:, ccMask);
+pBonds_cc   = pBonds_q(:, ccMask);     % PAM CC bonds (asset-walk, rolling)
+pBOM_cc     = pBOM_q(:, ccMask);       % PAM CC BOM   (asset-walk, rolling)
 N_obs_cc    = nValid * ccNP;
 
 % --- 3a. Actual values table ----------------------------------------------
@@ -833,65 +821,74 @@ fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations
 fprintf('(2008 onwards; 2007 excluded — no prior-year CNY rates available)\n');
 printActualTable( ...
   {'PAM bonds','PAM BOM','M1 CC','CC avg','CC close'}, ...
-  {fBonds_cc, fBOM_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
+  {pBonds_cc, pBOM_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
   ccPD, ccNP);
 
-% --- 3b. Error table — PAM bonds (flow, t_rec-anchored) benchmark --------
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds (flow, recognition-anchored)\n');
+% --- 3b. Error table — PAM bonds (asset-walk, rolling) as benchmark ------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC bonds (asset-walk, rolling PY)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM bonds      vs  M1 CC',    M1_CC_cc,  fBonds_cc);
-printRow('PAM bonds      vs  CC avg',   CC_avg_cc, fBonds_cc);
-printRow('PAM bonds      vs  CC close', CC_close_cc, fBonds_cc);
+printRow('PAM bonds      vs  M1 CC',    M1_CC_cc,  pBonds_cc);
+printRow('PAM bonds      vs  CC avg',   CC_avg_cc, pBonds_cc);
+printRow('PAM bonds      vs  CC close', CC_close_cc, pBonds_cc);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry CC vs industry CC\n');
 printRow('M1 CC          vs  CC avg',   M1_CC_cc,  CC_avg_cc);
 printRow('M1 CC          vs  CC close', M1_CC_cc,  CC_close_cc);
 printRow('CC avg         vs  CC close', CC_avg_cc, CC_close_cc);
 
-% --- 3c. Error table — PAM BOM (flow, t_ord-anchored) benchmark ----------
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM BOM (flow, order-anchored)\n');
+% --- 3c. Error table — PAM BOM (asset-walk, rolling) as benchmark --------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC BOM (asset-walk, rolling PY)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM BOM        vs  M1 CC',    M1_CC_cc,  fBOM_cc);
-printRow('PAM BOM        vs  CC avg',   CC_avg_cc, fBOM_cc);
-printRow('PAM BOM        vs  CC close', CC_close_cc, fBOM_cc);
+printRow('PAM BOM        vs  M1 CC',    M1_CC_cc,  pBOM_cc);
+printRow('PAM BOM        vs  CC avg',   CC_avg_cc, pBOM_cc);
+printRow('PAM BOM        vs  CC close', CC_close_cc, pBOM_cc);
 fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM bonds vs PAM BOM (size of order-vs-recognition anchor difference)\n');
-printRow('PAM BOM        vs  PAM bonds', fBOM_cc, fBonds_cc);
+fprintf('  PAM bonds vs PAM BOM (size of BOM-scope contribution)\n');
+printRow('PAM BOM        vs  PAM bonds', pBOM_cc, pBonds_cc);
 
-err_BOM_M1    = (M1_CC_cc    - fBOM_cc)   / 1e6;
-err_BOM_avg   = (CC_avg_cc   - fBOM_cc)   / 1e6;
-err_BOM_close = (CC_close_cc - fBOM_cc)   / 1e6;
-err_bonds_M1  = (M1_CC_cc    - fBonds_cc) / 1e6;
-err_bonds_avg = (CC_avg_cc   - fBonds_cc) / 1e6;
-err_bonds_close = (CC_close_cc - fBonds_cc) / 1e6;
+err_BOM_M1    = (M1_CC_cc    - pBOM_cc)   / 1e6;
+err_BOM_avg   = (CC_avg_cc   - pBOM_cc)   / 1e6;
+err_BOM_close = (CC_close_cc - pBOM_cc)   / 1e6;
+err_bonds_M1  = (M1_CC_cc    - pBonds_cc) / 1e6;
+err_bonds_avg = (CC_avg_cc   - pBonds_cc) / 1e6;
+err_bonds_close = (CC_close_cc - pBonds_cc) / 1e6;
 
-% --- Figure 19: CC mean per quarter (2008+) --------------------------------
+cPbonds = [0.0 0.4 0.8];   % blue   for PAM bonds
+cPBOM   = [0.8 0.4 0.0];   % orange for PAM BOM
+
+% --- Figure 19: CC mean per quarter — PAM CC vs Industry CC --------------
 fig = figure(19); clf; hold on;
-plot(ccQx, mu(fBOM_cc),     '-o',  'Color',cPAM,  'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM BOM');
-plot(ccQx, mu(fBonds_cc),   '--s', 'Color',cPAM,  'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds');
-plot(ccQx, mu(M1_CC_cc),    '-o',  'Color',cM1,   'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
-plot(ccQx, mu(CC_avg_cc),   '-o',  'Color',cCCavg,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
-plot(ccQx, mu(CC_close_cc), '-o',  'Color',cCCcls,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
+plot(ccQx, mu(pBOM_cc),     '-o',  'Color',cPBOM,  'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC BOM (asset-walk, rolling)');
+plot(ccQx, mu(pBonds_cc),   '-o',  'Color',cPbonds,'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC bonds (asset-walk, rolling)');
+plot(ccQx, mu(M1_CC_cc),    '-s',  'Color',cM1,   'LineWidth',1.0,'MarkerSize',3,'DisplayName','M1 CC (industry)');
+plot(ccQx, mu(CC_avg_cc),   '-s',  'Color',cCCavg,'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC avg (industry)');
+plot(ccQx, mu(CC_close_cc), '-s',  'Color',cCCcls,'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC close (industry)');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
-ylabel('SEK million'); title('CC — mean per quarter'); legend('Location','Best'); grid on;
+ylabel('SEK million');
+title('PAM CC (rolling PY) vs Industry CC — mean per quarter');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_actual.pdf'));
+saveas(fig, fullfile(figDir,'CC_pamCC_vs_industry_mean.pdf'));
 
-% --- Figure 20: CC cumulative (2008+) -------------------------------------
+% --- Figure 20: CC cumulative — PAM CC vs Industry CC -------------------
 fig = figure(20); clf; hold on;
-plot(ccQx, cumsum(mu(fBOM_cc)),     '-o',  'Color',cPAM,  'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM BOM');
-plot(ccQx, cumsum(mu(fBonds_cc)),   '--s', 'Color',cPAM,  'LineWidth',0.9,'MarkerSize',3,'DisplayName','PAM bonds');
-plot(ccQx, cumsum(mu(M1_CC_cc)),    '-o',  'Color',cM1,   'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
-plot(ccQx, cumsum(mu(CC_avg_cc)),   '-o',  'Color',cCCavg,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
-plot(ccQx, cumsum(mu(CC_close_cc)), '-o',  'Color',cCCcls,'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
+plot(ccQx, cumsum(mu(pBOM_cc)),     '-o',  'Color',cPBOM,  'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC BOM (asset-walk, rolling)');
+plot(ccQx, cumsum(mu(pBonds_cc)),   '-o',  'Color',cPbonds,'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds (asset-walk, rolling)');
+plot(ccQx, cumsum(mu(M1_CC_cc)),    '-s',  'Color',cM1,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','M1 CC (industry)');
+plot(ccQx, cumsum(mu(CC_avg_cc)),   '-s',  'Color',cCCavg,'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC avg (industry, monthly average)');
+plot(ccQx, cumsum(mu(CC_close_cc)), '-s',  'Color',cCCcls,'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC close (industry, period-opening)');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
-ylabel('SEK million'); title('CC — cumulative'); legend('Location','Best'); grid on;
+ylabel('SEK million');
+title('PAM CC (rolling PY) vs Industry CC — cumulative');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_actual_cum.pdf'));
+saveas(fig, fullfile(figDir,'CC_pamCC_vs_industry_cum.pdf'));
+
+fprintf('\n*** PAM CC plots saved to: %s/CC_pamCC_vs_industry_{mean,cum}.pdf ***\n\n', figDir);
 
 % --- Figure 21: CC error boxplot ------------------------------------------
 fig = figure(21); clf;
@@ -1042,11 +1039,13 @@ function formatFig(fig, w, h)
 % Uses -depth 1 to restrict to direct children of the figure, avoiding
 % hidden internal axes created by boxplot (which would corrupt outlier colors).
 %
-% Force-dock the figure here so every figure in runMC ends up as a tab in
-% the MATLAB Figures container regardless of whether the WindowStyle
-% default was honored at creation. Position is only set if undocked
-% (MATLAB warns when trying to set Position on a docked figure).
-  set(fig, 'WindowStyle', 'docked');
+% Try to dock for tab grouping, but tolerate failure (some MATLAB configs
+% warn or error when forcing docking on already-docked / restricted figures).
+  try
+    set(fig, 'WindowStyle', 'docked');
+  catch
+    % WindowStyle change not allowed; leave as default
+  end
   set(fig, 'PaperUnits','centimeters', 'PaperSize',[w h], ...
            'PaperPosition',[0 0 w h], 'PaperPositionMode','manual');
   allAx = findobj(fig, '-depth', 1, 'Type', 'axes');
