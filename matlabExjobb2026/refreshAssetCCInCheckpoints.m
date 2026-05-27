@@ -123,6 +123,15 @@ parfor ii = 1:length(seedsToProcess)
     % Compute new asset-walk PAM CC (the only NEW field set)
     pcc = performanceAttributionAssetCC(dm, dc, dp, pnl);
 
+    % Diagnostic: log dimensions of pcc so silent NaN can be spotted
+    if ~isfield(pcc, 'bonds') || ~isfield(pcc.bonds, 'total_quarterly')
+      error('performanceAttributionAssetCC returned pcc without bonds.total_quarterly');
+    end
+    fprintf('  seed %d diag: Q=%d, bonds.total_q sum=%.0f, BOM.total_q sum=%.0f\n', ...
+      k, length(pcc.bonds.total_quarterly), ...
+      sum(pcc.bonds.total_quarterly, 'omitnan'), ...
+      sum(pcc.BOM.total_quarterly, 'omitnan'));
+
     % Load existing checkpoint and update only pamCC_* fields
     tmp = load(ckptFile, 'r');
     r = tmp.r;

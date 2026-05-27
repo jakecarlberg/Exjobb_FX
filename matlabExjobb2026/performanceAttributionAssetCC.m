@@ -51,6 +51,18 @@ function fcc = performanceAttributionAssetCC(dm, dc, dp, pnl, window)
 if nargin < 5 || isempty(window), window = 'month'; end
 
 % =========================================================================
+% Early input validation — fail loudly if inputs are malformed
+% =========================================================================
+assert(isfield(pnl, 'quarterStartIdx') && ~isempty(pnl.quarterStartIdx), ...
+  'performanceAttributionAssetCC: pnl.quarterStartIdx missing or empty');
+assert(isfield(pnl, 'quarterEndIdx') && ~isempty(pnl.quarterEndIdx), ...
+  'performanceAttributionAssetCC: pnl.quarterEndIdx missing or empty');
+assert(isfield(dc, 'assets') && isfield(dc.assets, 'indBond'), ...
+  'performanceAttributionAssetCC: dc.assets.indBond missing');
+assert(isfield(dp, 'Pbar') && ~isempty(dp.Pbar), ...
+  'performanceAttributionAssetCC: dp.Pbar missing or empty');
+
+% =========================================================================
 % Setup
 % =========================================================================
 M    = length(dm.dates);
@@ -249,15 +261,23 @@ qStart = pnl.quarterStartIdx;
 qEnd   = pnl.quarterEndIdx;
 Q      = length(qStart);
 
+% Always create all 8 quarterly fields, even if Q=0 (defensive)
 scopes  = {'bonds', 'BOM'};
 fields  = {'trans', 'transl', 'cross', 'total'};
 for si = 1:length(scopes)
   for fi = 1:length(fields)
     fname_m = [fields{fi} '_monthly'];
     fname_q = [fields{fi} '_quarterly'];
-    fcc.(scopes{si}).(fname_q) = aggToQ(fcc.(scopes{si}).(fname_m), sEnd, qStart, qEnd, Q);
+    if Q == 0
+      fcc.(scopes{si}).(fname_q) = zeros(0, 1);
+    else
+      fcc.(scopes{si}).(fname_q) = aggToQ(fcc.(scopes{si}).(fname_m), sEnd, qStart, qEnd, Q);
+    end
   end
 end
+
+assert(Q > 0, ...
+  'performanceAttributionAssetCC: Q=0 (pnl.quarterStartIdx is empty), no quarterly output produced');
 
 % =========================================================================
 % Sanity asserts: trans + transl + cross = total per scope
