@@ -673,7 +673,7 @@ boxplot([err_TI_M1(:),  err_TI_M2w(:),  err_TI_M2m(:),  err_TI_M2q(:), ...
          err_BOM_TI_M1(:), err_BOM_TI_M2w(:), err_BOM_TI_M2m(:), err_BOM_TI_M2q(:)], ...
   'Labels', {'bonds-M1',    'bonds-M2w',    'bonds-M2m',    'bonds-M2q', ...
               'bonds+BOM-M1','bonds+BOM-M2w','bonds+BOM-M2m','bonds+BOM-M2q'});
-yline(0,'k--','HandleVisibility','off'); ylabel('SEK million'); title('TI — error distributions');
+yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_box.pdf'));
 
@@ -684,7 +684,7 @@ kdeplot(gca, err_TI_M2w(:), 'PAM bonds vs M2 weekly',   cM2w);
 kdeplot(gca, err_TI_M2m(:), 'PAM bonds vs M2 monthly',  cM2m);
 kdeplot(gca, err_TI_M2q(:), 'PAM bonds vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on; title('TI — error densities (PAM bonds benchmark)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_kde_bonds.pdf'));
 
@@ -695,7 +695,7 @@ kdeplot(gca, err_BOM_TI_M2w(:), 'PAM bonds+BOM vs M2 weekly',   cM2w);
 kdeplot(gca, err_BOM_TI_M2m(:), 'PAM bonds+BOM vs M2 monthly',  cM2m);
 kdeplot(gca, err_BOM_TI_M2q(:), 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on; title('TI — error densities (PAM bonds+BOM benchmark)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_kde_bom.pdf'));
 
@@ -763,7 +763,7 @@ saveas(fig, fullfile(figDir,'OCI_actual_cum.pdf'));
 fig = figure(17); clf;
 boxplot([err_OCI_M1(:), err_OCI_M2w(:), err_OCI_M2m(:), err_OCI_M2q(:)], ...
   'Labels', {'PAM-M1','PAM-M2w','PAM-M2m','PAM-M2q'});
-yline(0,'k--','HandleVisibility','off'); ylabel('SEK million'); title('OCI — error distributions');
+yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_errors_box.pdf'));
 
@@ -774,7 +774,7 @@ kdeplot(gca, err_OCI_M2w(:), 'PAM vs M2 weekly',   cM2w);
 kdeplot(gca, err_OCI_M2m(:), 'PAM vs M2 monthly',  cM2m);
 kdeplot(gca, err_OCI_M2q(:), 'PAM vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on; title('OCI — error densities');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_errors_kde.pdf'));
 
@@ -895,7 +895,7 @@ fig = figure(21); clf;
 boxplot([err_BOM_M1(:),   err_BOM_avg(:),   err_BOM_close(:), ...
          err_bonds_M1(:), err_bonds_avg(:), err_bonds_close(:)], ...
   'Labels', {'BOM-M1','BOM-avg','BOM-close','bonds-M1','bonds-avg','bonds-close'});
-yline(0,'k--','HandleVisibility','off'); ylabel('SEK million'); title('CC — error distributions');
+yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_box.pdf'));
 
@@ -905,7 +905,7 @@ kdeplot(gca, err_BOM_M1(:),    'PAM BOM vs M1 CC',    cM1);
 kdeplot(gca, err_BOM_avg(:),   'PAM BOM vs CC avg',   cCCavg);
 kdeplot(gca, err_BOM_close(:), 'PAM BOM vs CC close', cCCcls);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on; title('CC — error densities (PAM BOM benchmark)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bom.pdf'));
 
@@ -915,7 +915,7 @@ kdeplot(gca, err_bonds_M1(:),    'PAM bonds vs M1 CC',    cM1);
 kdeplot(gca, err_bonds_avg(:),   'PAM bonds vs CC avg',   cCCavg);
 kdeplot(gca, err_bonds_close(:), 'PAM bonds vs CC close', cCCcls);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on; title('CC — error densities (PAM bonds benchmark)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 
@@ -932,7 +932,7 @@ stdHist(gca, err_TI_M2w, 'PAM bonds vs M2 weekly',   cM2w);
 stdHist(gca, err_TI_M2m, 'PAM bonds vs M2 monthly',  cM2m);
 stdHist(gca, err_TI_M2q, 'PAM bonds vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('TI — quarterly std (PAM bonds)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bonds.pdf'));
 
@@ -943,7 +943,7 @@ stdHist(gca, err_BOM_TI_M2w, 'PAM bonds+BOM vs M2 weekly',   cM2w);
 stdHist(gca, err_BOM_TI_M2m, 'PAM bonds+BOM vs M2 monthly',  cM2m);
 stdHist(gca, err_BOM_TI_M2q, 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('TI — quarterly std (PAM bonds+BOM)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bom.pdf'));
 
@@ -964,7 +964,7 @@ stdHist(gca, err_BOM_M1,    'PAM BOM vs M1 CC',    cM1);
 stdHist(gca, err_BOM_avg,   'PAM BOM vs CC avg',   cCCavg);
 stdHist(gca, err_BOM_close, 'PAM BOM vs CC close', cCCcls);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('CC — quarterly std (PAM BOM)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bom.pdf'));
 
@@ -974,7 +974,7 @@ stdHist(gca, err_bonds_M1,    'PAM bonds vs M1 CC',    cM1);
 stdHist(gca, err_bonds_avg,   'PAM bonds vs CC avg',   cCCavg);
 stdHist(gca, err_bonds_close, 'PAM bonds vs CC close', cCCcls);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on; title('CC — quarterly std (PAM bonds)');
+legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bonds.pdf'));
 
