@@ -9,9 +9,11 @@
 % Roughly 1.5 min per seed (vs 4-5 min full runMC seed). Total for K=5000
 % with 2 workers: ~2 days (vs ~5 days full).
 %
-% Fields added/overwritten per checkpoint (8 new fields):
-%   r.pamCC_bonds_{trans, transl, cross, total}
-%   r.pamCC_BOM_{trans, transl, cross, total}
+% Fields added/overwritten per checkpoint (16 fields: 2 anchors × 2 scopes × 4 comps):
+%   r.pamCC_bonds_{trans, transl, cross, total}         (rolling PY-month anchor)
+%   r.pamCC_BOM_{trans, transl, cross, total}           (rolling PY-month anchor)
+%   r.pamCC_bonds_daily_{trans, transl, cross, total}   (daily PY-day anchor)
+%   r.pamCC_BOM_daily_{trans, transl, cross, total}     (daily PY-day anchor)
 %
 % Fields stripped (legacy from earlier runs, no longer in use):
 %   r.flowCC_bonds_*, r.flowCC_BOM_*  (flow CC — removed in cleanup)
@@ -127,10 +129,12 @@ parfor ii = 1:length(seedsToProcess)
     if ~isfield(pcc, 'bonds') || ~isfield(pcc.bonds, 'total_quarterly')
       error('performanceAttributionAssetCC returned pcc without bonds.total_quarterly');
     end
-    fprintf('  seed %d diag: Q=%d, bonds.total_q sum=%.0f, BOM.total_q sum=%.0f\n', ...
+    fprintf('  seed %d diag: Q=%d, roll bonds=%.0f BOM=%.0f | daily bonds=%.0f BOM=%.0f\n', ...
       k, length(pcc.bonds.total_quarterly), ...
       sum(pcc.bonds.total_quarterly, 'omitnan'), ...
-      sum(pcc.BOM.total_quarterly, 'omitnan'));
+      sum(pcc.BOM.total_quarterly, 'omitnan'), ...
+      sum(pcc.bonds_daily.total_quarterly, 'omitnan'), ...
+      sum(pcc.BOM_daily.total_quarterly, 'omitnan'));
 
     % Load existing checkpoint and update only pamCC_* fields
     tmp = load(ckptFile, 'r');
@@ -149,7 +153,7 @@ parfor ii = 1:length(seedsToProcess)
       if isfield(r, legacyFields{fi}), r = rmfield(r, legacyFields{fi}); end
     end
 
-    % Add 8 new pamCC_* fields
+    % Add 16 new pamCC_* fields (2 anchors × 2 scopes × 4 components)
     r.pamCC_bonds_trans  = nan(1, nP);
     r.pamCC_bonds_transl = nan(1, nP);
     r.pamCC_bonds_cross  = nan(1, nP);
@@ -158,6 +162,14 @@ parfor ii = 1:length(seedsToProcess)
     r.pamCC_BOM_transl   = nan(1, nP);
     r.pamCC_BOM_cross    = nan(1, nP);
     r.pamCC_BOM_total    = nan(1, nP);
+    r.pamCC_bonds_daily_trans  = nan(1, nP);
+    r.pamCC_bonds_daily_transl = nan(1, nP);
+    r.pamCC_bonds_daily_cross  = nan(1, nP);
+    r.pamCC_bonds_daily_total  = nan(1, nP);
+    r.pamCC_BOM_daily_trans    = nan(1, nP);
+    r.pamCC_BOM_daily_transl   = nan(1, nP);
+    r.pamCC_BOM_daily_cross    = nan(1, nP);
+    r.pamCC_BOM_daily_total    = nan(1, nP);
 
     Pa = min(length(pcc.bonds.total_quarterly), nP);
     r.pamCC_bonds_trans(1:Pa)  = pcc.bonds.trans_quarterly(1:Pa)';
@@ -168,6 +180,14 @@ parfor ii = 1:length(seedsToProcess)
     r.pamCC_BOM_transl(1:Pa)   = pcc.BOM.transl_quarterly(1:Pa)';
     r.pamCC_BOM_cross(1:Pa)    = pcc.BOM.cross_quarterly(1:Pa)';
     r.pamCC_BOM_total(1:Pa)    = pcc.BOM.total_quarterly(1:Pa)';
+    r.pamCC_bonds_daily_trans(1:Pa)  = pcc.bonds_daily.trans_quarterly(1:Pa)';
+    r.pamCC_bonds_daily_transl(1:Pa) = pcc.bonds_daily.transl_quarterly(1:Pa)';
+    r.pamCC_bonds_daily_cross(1:Pa)  = pcc.bonds_daily.cross_quarterly(1:Pa)';
+    r.pamCC_bonds_daily_total(1:Pa)  = pcc.bonds_daily.total_quarterly(1:Pa)';
+    r.pamCC_BOM_daily_trans(1:Pa)    = pcc.BOM_daily.trans_quarterly(1:Pa)';
+    r.pamCC_BOM_daily_transl(1:Pa)   = pcc.BOM_daily.transl_quarterly(1:Pa)';
+    r.pamCC_BOM_daily_cross(1:Pa)    = pcc.BOM_daily.cross_quarterly(1:Pa)';
+    r.pamCC_BOM_daily_total(1:Pa)    = pcc.BOM_daily.total_quarterly(1:Pa)';
 
     saveCheckpoint(ckptFile, r);
   catch ME

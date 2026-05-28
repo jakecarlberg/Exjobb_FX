@@ -139,14 +139,16 @@ mc.CC_close_TI  = nan(K, nPeriods);
 mc.CC_close_OCI = nan(K, nPeriods);
 
 % --- PAM CC via assets (performanceAttributionAssetCC) ------------------
-% Rolling per-day PY anchor only (current_month-12 average).
+% Two anchor conventions computed in one pass:
+%   rolling: PY same-calendar-month average, updated daily
+%   daily:   PY same-calendar-day spot (fallback nearest earlier trading day)
 % Two scopes:
 %   bonds = walk dc.assets.indBond           (AR + AP zero coupon bonds)
 %   BOM   = walk dc.assets.indBond + indManufactured (bonds + Component+Product BOMs)
 % Computes hI × Pbar from PAM's pricing (clsPriceBond / clsPriceBOM); no
 % new pricing introduced. Per-asset F-functions over each asset's lifetime
 % with maturity-day pull-to-par extension.
-for mode = {'bonds','BOM'}
+for mode = {'bonds','BOM','bonds_daily','BOM_daily'}
   m = mode{1};
   for comp = {'trans','transl','cross','total'}
     mc.(sprintf('pamCC_%s_%s', m, comp{1})) = nan(K, nPeriods);
@@ -252,6 +254,10 @@ parfor ii = 1:length(seeds)
       'pamCC_bonds_cross', nan(1, nPeriods), 'pamCC_bonds_total',  nan(1, nPeriods), ...
       'pamCC_BOM_trans',   nan(1, nPeriods), 'pamCC_BOM_transl',   nan(1, nPeriods), ...
       'pamCC_BOM_cross',   nan(1, nPeriods), 'pamCC_BOM_total',    nan(1, nPeriods), ...
+      'pamCC_bonds_daily_trans', nan(1, nPeriods), 'pamCC_bonds_daily_transl', nan(1, nPeriods), ...
+      'pamCC_bonds_daily_cross', nan(1, nPeriods), 'pamCC_bonds_daily_total',  nan(1, nPeriods), ...
+      'pamCC_BOM_daily_trans',   nan(1, nPeriods), 'pamCC_BOM_daily_transl',   nan(1, nPeriods), ...
+      'pamCC_BOM_daily_cross',   nan(1, nPeriods), 'pamCC_BOM_daily_total',    nan(1, nPeriods), ...
       'actRevEUR',  nan(1, nYears_mc), 'actGMpct',  nan(1, nYears_mc), ...
       'netExpPct',  nan(nYears_mc, nCur_mc));
 
@@ -311,7 +317,7 @@ parfor ii = 1:length(seeds)
       r.CC_close_TI(1:P) = m1.cc.close.quarterly_TI(1:P)';
       r.CC_close_OCI(1:P)= m1.cc.close.quarterly_OCI(1:P)';
 
-      % --- PAM CC via assets (asset-walk, rolling PY anchor) -----------
+      % --- PAM CC via assets (asset-walk, rolling + daily PY anchor) ---
       pcc = performanceAttributionAssetCC(dm, dc, dp, pnl);
       Pa  = min(length(pcc.bonds.total_quarterly), nPeriods);
       r.pamCC_bonds_trans(1:Pa)  = pcc.bonds.trans_quarterly(1:Pa)';
@@ -322,6 +328,14 @@ parfor ii = 1:length(seeds)
       r.pamCC_BOM_transl(1:Pa)   = pcc.BOM.transl_quarterly(1:Pa)';
       r.pamCC_BOM_cross(1:Pa)    = pcc.BOM.cross_quarterly(1:Pa)';
       r.pamCC_BOM_total(1:Pa)    = pcc.BOM.total_quarterly(1:Pa)';
+      r.pamCC_bonds_daily_trans(1:Pa)  = pcc.bonds_daily.trans_quarterly(1:Pa)';
+      r.pamCC_bonds_daily_transl(1:Pa) = pcc.bonds_daily.transl_quarterly(1:Pa)';
+      r.pamCC_bonds_daily_cross(1:Pa)  = pcc.bonds_daily.cross_quarterly(1:Pa)';
+      r.pamCC_bonds_daily_total(1:Pa)  = pcc.bonds_daily.total_quarterly(1:Pa)';
+      r.pamCC_BOM_daily_trans(1:Pa)    = pcc.BOM_daily.trans_quarterly(1:Pa)';
+      r.pamCC_BOM_daily_transl(1:Pa)   = pcc.BOM_daily.transl_quarterly(1:Pa)';
+      r.pamCC_BOM_daily_cross(1:Pa)    = pcc.BOM_daily.cross_quarterly(1:Pa)';
+      r.pamCC_BOM_daily_total(1:Pa)    = pcc.BOM_daily.total_quarterly(1:Pa)';
 
     catch ME
       fprintf('  [iter %d] ERROR: %s\n', k, ME.message);
@@ -362,8 +376,8 @@ for k = 1:K
   mc.M1_CC_TI(k,:)    = r.M1_CC_TI;    mc.M1_CC_OCI(k,:)    = r.M1_CC_OCI;
   mc.CC_avg_TI(k,:)   = r.CC_avg_TI;   mc.CC_avg_OCI(k,:)   = r.CC_avg_OCI;
   mc.CC_close_TI(k,:) = r.CC_close_TI; mc.CC_close_OCI(k,:) = r.CC_close_OCI;
-  % Scatter PAM CC via assets (rolling PY anchor): 2 scopes × 4 components
-  for mode = {'bonds','BOM'}
+  % Scatter PAM CC via assets: 4 scopes (rolling + daily) × 4 components
+  for mode = {'bonds','BOM','bonds_daily','BOM_daily'}
     m = mode{1};
     for comp = {'trans','transl','cross','total'}
       fn = sprintf('pamCC_%s_%s', m, comp{1});
@@ -587,6 +601,9 @@ CC_close_q   = qV('CC_close_TI') + qV('CC_close_OCI');
 % --- PAM CC via assets (rolling PY anchor) -------------------------------
 pBonds_q     = qV('pamCC_bonds_total');    % bonds-only scope
 pBOM_q       = qV('pamCC_BOM_total');      % bonds + manufactured scope
+% --- PAM CC via assets (daily PY anchor) --------------------------------
+pBonds_daily_q = qV('pamCC_bonds_daily_total');
+pBOM_daily_q   = qV('pamCC_BOM_daily_total');
 
 N_obs = nValid * nPeriods;
 
@@ -809,19 +826,21 @@ end
 ccQx = 1:ccNP;
 
 % Filtered CC matrices [nValid x ccNP]
-M1_CC_cc    = M1_CC_q(:, ccMask);
-CC_avg_cc   = CC_avg_q(:, ccMask);
-CC_close_cc = CC_close_q(:, ccMask);
-pBonds_cc   = pBonds_q(:, ccMask);     % PAM CC bonds (asset-walk, rolling)
-pBOM_cc     = pBOM_q(:, ccMask);       % PAM CC BOM   (asset-walk, rolling)
-N_obs_cc    = nValid * ccNP;
+M1_CC_cc          = M1_CC_q(:, ccMask);
+CC_avg_cc         = CC_avg_q(:, ccMask);
+CC_close_cc       = CC_close_q(:, ccMask);
+pBonds_cc         = pBonds_q(:, ccMask);          % PAM CC bonds (rolling)
+pBOM_cc           = pBOM_q(:, ccMask);            % PAM CC BOM   (rolling)
+pBonds_daily_cc   = pBonds_daily_q(:, ccMask);    % PAM CC bonds (daily)
+pBOM_daily_cc     = pBOM_daily_q(:, ccMask);      % PAM CC BOM   (daily)
+N_obs_cc          = nValid * ccNP;
 
 % --- 3a. Actual values table ----------------------------------------------
 fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
 fprintf('(2008 onwards; 2007 excluded — no prior-year CNY rates available)\n');
 printActualTable( ...
-  {'PAM bonds','PAM BOM','M1 CC','CC avg','CC close'}, ...
-  {pBonds_cc, pBOM_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
+  {'PAM bonds (roll)','PAM BOM (roll)','PAM bonds (daily)','PAM BOM (daily)','M1 CC','CC avg','CC close'}, ...
+  {pBonds_cc, pBOM_cc, pBonds_daily_cc, pBOM_daily_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
   ccPD, ccNP);
 
 % --- 3b. Error table — PAM bonds (asset-walk, rolling) as benchmark ------
@@ -848,6 +867,25 @@ fprintf('%s\n', repmat('-',1,112));
 fprintf('  PAM bonds vs PAM BOM (size of BOM-scope contribution)\n');
 printRow('PAM BOM        vs  PAM bonds', pBOM_cc, pBonds_cc);
 
+% --- 3d. Error table — Daily PY anchor variants -------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC bonds (asset-walk, daily PY)\n');
+fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
+printHeader();
+printRow('PAM bonds (d) vs  M1 CC',    M1_CC_cc,    pBonds_daily_cc);
+printRow('PAM bonds (d) vs  CC avg',   CC_avg_cc,   pBonds_daily_cc);
+printRow('PAM bonds (d) vs  CC close', CC_close_cc, pBonds_daily_cc);
+
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC BOM (asset-walk, daily PY)\n');
+fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
+printHeader();
+printRow('PAM BOM (d)   vs  M1 CC',    M1_CC_cc,    pBOM_daily_cc);
+printRow('PAM BOM (d)   vs  CC avg',   CC_avg_cc,   pBOM_daily_cc);
+printRow('PAM BOM (d)   vs  CC close', CC_close_cc, pBOM_daily_cc);
+
+fprintf('\n  Rolling vs daily anchor (size of anchor-choice effect)\n');
+printRow('PAM bonds (d) vs  PAM bonds (r)', pBonds_daily_cc, pBonds_cc);
+printRow('PAM BOM   (d) vs  PAM BOM   (r)', pBOM_daily_cc,   pBOM_cc);
+
 err_BOM_M1    = (M1_CC_cc    - pBOM_cc)   / 1e6;
 err_BOM_avg   = (CC_avg_cc   - pBOM_cc)   / 1e6;
 err_BOM_close = (CC_close_cc - pBOM_cc)   / 1e6;
@@ -855,35 +893,41 @@ err_bonds_M1  = (M1_CC_cc    - pBonds_cc) / 1e6;
 err_bonds_avg = (CC_avg_cc   - pBonds_cc) / 1e6;
 err_bonds_close = (CC_close_cc - pBonds_cc) / 1e6;
 
-cPbonds = [0.0 0.4 0.8];   % blue   for PAM bonds
-cPBOM   = [0.8 0.4 0.0];   % orange for PAM BOM
+cPbonds   = [0.0 0.4 0.8];   % blue   for PAM bonds (rolling)
+cPBOM     = [0.8 0.4 0.0];   % orange for PAM BOM   (rolling)
+cPbondsD  = [0.3 0.6 1.0];   % light blue   for PAM bonds (daily)
+cPBOMD    = [1.0 0.6 0.3];   % light orange for PAM BOM   (daily)
 
 % --- Figure 19: CC mean per quarter — PAM CC vs Industry CC --------------
 fig = figure(19); clf; hold on;
-plot(ccQx, mu(pBOM_cc),     '-o',  'Color',cPBOM,  'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC BOM (asset-walk, rolling)');
-plot(ccQx, mu(pBonds_cc),   '-o',  'Color',cPbonds,'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC bonds (asset-walk, rolling)');
-plot(ccQx, mu(M1_CC_cc),    '-s',  'Color',cM1,   'LineWidth',1.0,'MarkerSize',3,'DisplayName','M1 CC (industry)');
-plot(ccQx, mu(CC_avg_cc),   '-s',  'Color',cCCavg,'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC avg (industry)');
-plot(ccQx, mu(CC_close_cc), '-s',  'Color',cCCcls,'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC close (industry)');
+plot(ccQx, mu(pBOM_cc),         '-o',  'Color',cPBOM,    'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC BOM (rolling PY-month)');
+plot(ccQx, mu(pBonds_cc),       '-o',  'Color',cPbonds,  'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC bonds (rolling PY-month)');
+plot(ccQx, mu(pBOM_daily_cc),   '--d', 'Color',cPBOMD,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','PAM CC BOM (daily PY-day)');
+plot(ccQx, mu(pBonds_daily_cc), '--d', 'Color',cPbondsD, 'LineWidth',1.2,'MarkerSize',3,'DisplayName','PAM CC bonds (daily PY-day)');
+plot(ccQx, mu(M1_CC_cc),        '-s',  'Color',cM1,      'LineWidth',1.0,'MarkerSize',3,'DisplayName','M1 CC (industry)');
+plot(ccQx, mu(CC_avg_cc),       '-s',  'Color',cCCavg,   'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC avg (industry)');
+plot(ccQx, mu(CC_close_cc),     '-s',  'Color',cCCcls,   'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC close (industry)');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million');
-title('PAM CC (rolling PY) vs Industry CC — mean per quarter');
+title('PAM CC (rolling + daily) vs Industry CC — mean per quarter');
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_pamCC_vs_industry_mean.pdf'));
 
 % --- Figure 20: CC cumulative — PAM CC vs Industry CC -------------------
 fig = figure(20); clf; hold on;
-plot(ccQx, cumsum(mu(pBOM_cc)),     '-o',  'Color',cPBOM,  'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC BOM (asset-walk, rolling)');
-plot(ccQx, cumsum(mu(pBonds_cc)),   '-o',  'Color',cPbonds,'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds (asset-walk, rolling)');
-plot(ccQx, cumsum(mu(M1_CC_cc)),    '-s',  'Color',cM1,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','M1 CC (industry)');
-plot(ccQx, cumsum(mu(CC_avg_cc)),   '-s',  'Color',cCCavg,'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC avg (industry, monthly average)');
-plot(ccQx, cumsum(mu(CC_close_cc)), '-s',  'Color',cCCcls,'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC close (industry, period-opening)');
+plot(ccQx, cumsum(mu(pBOM_cc)),         '-o',  'Color',cPBOM,    'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC BOM (rolling PY-month)');
+plot(ccQx, cumsum(mu(pBonds_cc)),       '-o',  'Color',cPbonds,  'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds (rolling PY-month)');
+plot(ccQx, cumsum(mu(pBOM_daily_cc)),   '--d', 'Color',cPBOMD,   'LineWidth',1.4,'MarkerSize',3,'DisplayName','PAM CC BOM (daily PY-day)');
+plot(ccQx, cumsum(mu(pBonds_daily_cc)), '--d', 'Color',cPbondsD, 'LineWidth',1.4,'MarkerSize',3,'DisplayName','PAM CC bonds (daily PY-day)');
+plot(ccQx, cumsum(mu(M1_CC_cc)),        '-s',  'Color',cM1,      'LineWidth',1.2,'MarkerSize',3,'DisplayName','M1 CC (industry)');
+plot(ccQx, cumsum(mu(CC_avg_cc)),       '-s',  'Color',cCCavg,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC avg (industry, monthly average)');
+plot(ccQx, cumsum(mu(CC_close_cc)),     '-s',  'Color',cCCcls,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC close (industry, period-opening)');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million');
-title('PAM CC (rolling PY) vs Industry CC — cumulative');
+title('PAM CC (rolling + daily) vs Industry CC — cumulative');
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_pamCC_vs_industry_cum.pdf'));

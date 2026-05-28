@@ -1,13 +1,23 @@
 function fcc = performanceAttributionAssetCC(dm, dc, dp, pnl, window)
 % performanceAttributionAssetCC
 %   PAM constant-currency benchmark computed by walking PAM's asset
-%   framework directly. Rolling per-day PY anchor (current month minus
-%   12 months) is the only anchor convention. Two scopes are returned:
+%   framework directly. Two PY anchor conventions are computed in one
+%   pass (single asset walk, two parallel F-function evaluations):
+%
+%     rolling: PY same-calendar-month average, updated daily
+%     daily:   PY same-calendar-day spot (fallback nearest earlier
+%              trading day for weekends/holidays)
+%
+%   Four output scopes returned:
 %
 %     fcc.bonds.{trans,transl,cross,total}_{monthly,quarterly}
-%         restricted to dc.assets.indBond (AR + AP zero coupon bonds)
+%         AR + AP zero coupon bonds, rolling anchor
 %     fcc.BOM.{trans,transl,cross,total}_{monthly,quarterly}
-%         restricted to dc.assets.indBond + dc.assets.indManufactured
+%         bonds + Component+Product BOMs, rolling anchor
+%     fcc.bonds_daily.{trans,transl,cross,total}_{monthly,quarterly}
+%         same as bonds but with daily PY anchor
+%     fcc.BOM_daily.{trans,transl,cross,total}_{monthly,quarterly}
+%         same as BOM but with daily PY anchor
 %
 %   The benchmark is conceptually computed as two parallel SEK
 %   valuations of each in-scope asset over its lifetime:
@@ -117,6 +127,37 @@ for t = 1:M
 end
 
 % =========================================================================
+% Per-day daily PY anchors (PY same calendar date, fallback nearest earlier)
+% Differs from rolling: uses PY same-day spot rate, not PY same-month average.
+% =========================================================================
+f_for_daily = cell(nCur, 1);
+for c = 1:nCur
+  f_for_daily{c} = zeros(M, 1);
+end
+f_EUR_SEK_daily = zeros(M, 1);
+
+[Yall, Moall, Dall] = datevec(dm.dates);
+for t = 1:M
+  % Target PY date (handle leap day by capping at 28 for Feb 29)
+  targetDate = datenum(Yall(t) - 1, Moall(t), min(Dall(t), 28));
+  t_py = find(dm.dates <= targetDate, 1, 'last');
+  if isempty(t_py), continue; end
+  for c = 1:nCur
+    if c == iEUR || c == iSEK, continue; end
+    fxCEUR = dm.fx{c, iEUR};
+    if isempty(fxCEUR), continue; end
+    v = fxCEUR(t_py);
+    if isfinite(v) && v > 0
+      f_for_daily{c}(t) = v;
+    end
+  end
+  v = f_EUR_SEK(t_py);
+  if isfinite(v) && v > 0
+    f_EUR_SEK_daily(t) = v;
+  end
+end
+
+% =========================================================================
 % Scope masks (intersected with active assets)
 % =========================================================================
 mask_bonds = false(N, 1);
@@ -128,10 +169,14 @@ mask_bonds = mask_bonds & activeAssets;
 mask_BOM   = mask_BOM   & activeAssets;
 
 % =========================================================================
-% Accumulators: 2 scopes × 3 components (total derived as sum)
+% Accumulators: 2 scopes × 2 anchors × 3 components (total derived as sum)
 % =========================================================================
 trans_bonds_m  = zeros(nSub, 1);  transl_bonds_m  = zeros(nSub, 1);  cross_bonds_m  = zeros(nSub, 1);
 trans_BOM_m    = zeros(nSub, 1);  transl_BOM_m    = zeros(nSub, 1);  cross_BOM_m    = zeros(nSub, 1);
+
+% Daily anchor accumulators
+trans_bonds_daily_m  = zeros(nSub, 1);  transl_bonds_daily_m  = zeros(nSub, 1);  cross_bonds_daily_m  = zeros(nSub, 1);
+trans_BOM_daily_m    = zeros(nSub, 1);  transl_BOM_daily_m    = zeros(nSub, 1);  cross_BOM_daily_m    = zeros(nSub, 1);
 
 % =========================================================================
 % Per-asset walk
@@ -204,33 +249,65 @@ for j = 1:N
   aRoll = f_for_roll{iCurFor}(t_window);
   bRoll = f_EUR_SEK_roll(t_window);
   rollValid = (aRoll > 0) & (bRoll > 0);
-  if ~any(rollValid), continue; end
 
-  % Compute F functions with rolling anchor (per-day)
-  F_tr = X .* bRoll .* (a - aRoll);
-  F_tl = X .* aRoll .* (b - bRoll);
-  F_cr = X .* (a - aRoll) .* (b - bRoll);
-  F_tr(~rollValid) = 0;
-  F_tl(~rollValid) = 0;
-  F_cr(~rollValid) = 0;
-  d_tr = [F_tr(1); diff(F_tr)];
-  d_tl = [F_tl(1); diff(F_tl)];
-  d_cr = [F_cr(1); diff(F_cr)];
+  % Per-day daily PY anchor arrays
+  aDaily = f_for_daily{iCurFor}(t_window);
+  bDaily = f_EUR_SEK_daily(t_window);
+  dailyValid = (aDaily > 0) & (bDaily > 0);
 
-  if mask_bonds(j)
-    trans_bonds_m  = trans_bonds_m  + accumarray(buckets(validBk), d_tr(validBk),  [nSub, 1]);
-    transl_bonds_m = transl_bonds_m + accumarray(buckets(validBk), d_tl(validBk), [nSub, 1]);
-    cross_bonds_m  = cross_bonds_m  + accumarray(buckets(validBk), d_cr(validBk),  [nSub, 1]);
+  if ~any(rollValid) && ~any(dailyValid), continue; end
+
+  % --- Rolling-anchor F functions ----------------------------------------
+  if any(rollValid)
+    F_tr = X .* bRoll .* (a - aRoll);
+    F_tl = X .* aRoll .* (b - bRoll);
+    F_cr = X .* (a - aRoll) .* (b - bRoll);
+    F_tr(~rollValid) = 0;
+    F_tl(~rollValid) = 0;
+    F_cr(~rollValid) = 0;
+    d_tr = [F_tr(1); diff(F_tr)];
+    d_tl = [F_tl(1); diff(F_tl)];
+    d_cr = [F_cr(1); diff(F_cr)];
+
+    if mask_bonds(j)
+      trans_bonds_m  = trans_bonds_m  + accumarray(buckets(validBk), d_tr(validBk),  [nSub, 1]);
+      transl_bonds_m = transl_bonds_m + accumarray(buckets(validBk), d_tl(validBk), [nSub, 1]);
+      cross_bonds_m  = cross_bonds_m  + accumarray(buckets(validBk), d_cr(validBk),  [nSub, 1]);
+    end
+    if mask_BOM(j)
+      trans_BOM_m  = trans_BOM_m  + accumarray(buckets(validBk), d_tr(validBk),  [nSub, 1]);
+      transl_BOM_m = transl_BOM_m + accumarray(buckets(validBk), d_tl(validBk), [nSub, 1]);
+      cross_BOM_m  = cross_BOM_m  + accumarray(buckets(validBk), d_cr(validBk),  [nSub, 1]);
+    end
   end
-  if mask_BOM(j)
-    trans_BOM_m  = trans_BOM_m  + accumarray(buckets(validBk), d_tr(validBk),  [nSub, 1]);
-    transl_BOM_m = transl_BOM_m + accumarray(buckets(validBk), d_tl(validBk), [nSub, 1]);
-    cross_BOM_m  = cross_BOM_m  + accumarray(buckets(validBk), d_cr(validBk),  [nSub, 1]);
+
+  % --- Daily-anchor F functions ------------------------------------------
+  if any(dailyValid)
+    F_tr_d = X .* bDaily .* (a - aDaily);
+    F_tl_d = X .* aDaily .* (b - bDaily);
+    F_cr_d = X .* (a - aDaily) .* (b - bDaily);
+    F_tr_d(~dailyValid) = 0;
+    F_tl_d(~dailyValid) = 0;
+    F_cr_d(~dailyValid) = 0;
+    d_tr_d = [F_tr_d(1); diff(F_tr_d)];
+    d_tl_d = [F_tl_d(1); diff(F_tl_d)];
+    d_cr_d = [F_cr_d(1); diff(F_cr_d)];
+
+    if mask_bonds(j)
+      trans_bonds_daily_m  = trans_bonds_daily_m  + accumarray(buckets(validBk), d_tr_d(validBk),  [nSub, 1]);
+      transl_bonds_daily_m = transl_bonds_daily_m + accumarray(buckets(validBk), d_tl_d(validBk), [nSub, 1]);
+      cross_bonds_daily_m  = cross_bonds_daily_m  + accumarray(buckets(validBk), d_cr_d(validBk),  [nSub, 1]);
+    end
+    if mask_BOM(j)
+      trans_BOM_daily_m  = trans_BOM_daily_m  + accumarray(buckets(validBk), d_tr_d(validBk),  [nSub, 1]);
+      transl_BOM_daily_m = transl_BOM_daily_m + accumarray(buckets(validBk), d_tl_d(validBk), [nSub, 1]);
+      cross_BOM_daily_m  = cross_BOM_daily_m  + accumarray(buckets(validBk), d_cr_d(validBk),  [nSub, 1]);
+    end
   end
 end
 
 % =========================================================================
-% Pack output struct (monthly)
+% Pack output struct (monthly) — rolling and daily anchor variants
 % =========================================================================
 fcc.bonds.trans_monthly  = trans_bonds_m;
 fcc.bonds.transl_monthly = transl_bonds_m;
@@ -242,6 +319,16 @@ fcc.BOM.transl_monthly   = transl_BOM_m;
 fcc.BOM.cross_monthly    = cross_BOM_m;
 fcc.BOM.total_monthly    = trans_BOM_m + transl_BOM_m + cross_BOM_m;
 
+fcc.bonds_daily.trans_monthly  = trans_bonds_daily_m;
+fcc.bonds_daily.transl_monthly = transl_bonds_daily_m;
+fcc.bonds_daily.cross_monthly  = cross_bonds_daily_m;
+fcc.bonds_daily.total_monthly  = trans_bonds_daily_m + transl_bonds_daily_m + cross_bonds_daily_m;
+
+fcc.BOM_daily.trans_monthly    = trans_BOM_daily_m;
+fcc.BOM_daily.transl_monthly   = transl_BOM_daily_m;
+fcc.BOM_daily.cross_monthly    = cross_BOM_daily_m;
+fcc.BOM_daily.total_monthly    = trans_BOM_daily_m + transl_BOM_daily_m + cross_BOM_daily_m;
+
 % =========================================================================
 % Quarterly aggregation
 % =========================================================================
@@ -249,7 +336,7 @@ qStart = pnl.quarterStartIdx;
 qEnd   = pnl.quarterEndIdx;
 Q      = length(qStart);
 
-scopes  = {'bonds', 'BOM'};
+scopes  = {'bonds', 'BOM', 'bonds_daily', 'BOM_daily'};
 fields  = {'trans', 'transl', 'cross', 'total'};
 for si = 1:length(scopes)
   for fi = 1:length(fields)
@@ -260,9 +347,10 @@ for si = 1:length(scopes)
 end
 
 % =========================================================================
-% Sanity asserts: trans + transl + cross = total per scope
+% Sanity asserts: trans + transl + cross = total per scope (all 4 scopes)
 % =========================================================================
-ccScale = max([abs(fcc.bonds.total_quarterly); abs(fcc.BOM.total_quarterly)]) + 1;
+ccScale = max([abs(fcc.bonds.total_quarterly);       abs(fcc.BOM.total_quarterly); ...
+               abs(fcc.bonds_daily.total_quarterly); abs(fcc.BOM_daily.total_quarterly)]) + 1;
 for si = 1:length(scopes)
   s = scopes{si};
   decompErr = max(abs(fcc.(s).trans_quarterly + fcc.(s).transl_quarterly + ...
