@@ -971,8 +971,8 @@ allErrCC_bonds = [err_bonds_daily_M1(:); err_bonds_daily_avg(:); err_bonds_daily
 allErrCC_BOM   = [err_BOM_daily_M1(:);   err_BOM_daily_avg(:);   err_BOM_daily_close(:)];
 ccBoxRange     = [min([allErrCC_bonds; allErrCC_BOM], [], 'omitnan'), ...
                   max([allErrCC_bonds; allErrCC_BOM], [], 'omitnan')];
-ccKdeRange     = [prctile([allErrCC_bonds; allErrCC_BOM], 0.5), ...
-                  prctile([allErrCC_bonds; allErrCC_BOM], 99.5)];
+ccKdeRange     = [min([allErrCC_bonds; allErrCC_BOM], [], 'omitnan'), ...
+                  max([allErrCC_bonds; allErrCC_BOM], [], 'omitnan')];
 
 % --- Figure 21a: CC error boxplot — PAM bonds --------------------------
 fig = figure(); clf;
