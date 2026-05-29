@@ -482,8 +482,7 @@ cM1    = [0.89 0.10 0.11];  % red    — Method 1
 cM2w   = [0.99 0.55 0.24];  % orange — M2 weekly
 cM2m   = [0.20 0.63 0.17];  % green  — M2 monthly
 cM2q   = [0.55 0.34 0.72];  % purple — M2 quarterly
-cCCavg = [0.09 0.62 0.75];  % teal   — CC average
-cCCcls = [0.55 0.34 0.72];  % purple — CC close
+% CC variants reuse TI/OCI palette: M1 CC = cM1, CC avg = cM2m, CC close = cM2q
 
 valValid = ~any(isnan(mc.actRevEUR), 2);
 nValValid = sum(valValid);
@@ -656,6 +655,23 @@ err_BOM_TI_M2w = (M2w_TI_q - PAM_TI_BOM_q) / 1e6;
 err_BOM_TI_M2m = (M2m_TI_q - PAM_TI_BOM_q) / 1e6;
 err_BOM_TI_M2q = (M2q_TI_q - PAM_TI_BOM_q) / 1e6;
 
+% --- 1d. Per-quarter std summary tables (for histogram descriptions) -----
+fprintf('\nPer-quarter std summary (SEK million) | Benchmark: PAM bonds\n');
+fprintf('  Std computed across %d iterations per quarter, summarised over %d quarters\n', nValid, nPeriods);
+printQStdHeader();
+printQStdRow('M1',           err_TI_M1);
+printQStdRow('M2 weekly',    err_TI_M2w);
+printQStdRow('M2 monthly',   err_TI_M2m);
+printQStdRow('M2 quarterly', err_TI_M2q);
+
+fprintf('\nPer-quarter std summary (SEK million) | Benchmark: PAM bonds+BOM\n');
+fprintf('  Std computed across %d iterations per quarter, summarised over %d quarters\n', nValid, nPeriods);
+printQStdHeader();
+printQStdRow('M1',           err_BOM_TI_M1);
+printQStdRow('M2 weekly',    err_BOM_TI_M2w);
+printQStdRow('M2 monthly',   err_BOM_TI_M2m);
+printQStdRow('M2 quarterly', err_BOM_TI_M2q);
+
 % --- Figure 10: TI mean per quarter ---------------------------------------
 fig = figure(10); clf; hold on;
 plot(qx, mu(PAM_TI_q),     '-o',  'Color',cPAM,'LineWidth',1.3,'MarkerSize',3,'DisplayName','PAM bonds');
@@ -684,15 +700,31 @@ ylabel('SEK million'); title('TI — cumulative'); legend('Location','Best'); gr
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_actual_cum.pdf'));
 
-% --- Figure 12: TI error boxplot ------------------------------------------
-fig = figure(12); clf;
-boxplot([err_TI_M1(:),  err_TI_M2w(:),  err_TI_M2m(:),  err_TI_M2q(:), ...
-         err_BOM_TI_M1(:), err_BOM_TI_M2w(:), err_BOM_TI_M2m(:), err_BOM_TI_M2q(:)], ...
-  'Labels', {'bonds-M1',    'bonds-M2w',    'bonds-M2m',    'bonds-M2q', ...
-              'bonds+BOM-M1','bonds+BOM-M2w','bonds+BOM-M2m','bonds+BOM-M2q'});
+% Shared y/x-axis ranges for TI bonds vs bonds+BOM comparison
+allErrTI_bonds = [err_TI_M1(:); err_TI_M2w(:); err_TI_M2m(:); err_TI_M2q(:)];
+allErrTI_BOM   = [err_BOM_TI_M1(:); err_BOM_TI_M2w(:); err_BOM_TI_M2m(:); err_BOM_TI_M2q(:)];
+tiBoxRange     = [min([allErrTI_bonds; allErrTI_BOM], [], 'omitnan'), ...
+                  max([allErrTI_bonds; allErrTI_BOM], [], 'omitnan')];
+tiKdeRange     = [prctile([allErrTI_bonds; allErrTI_BOM], 0.5), ...
+                  prctile([allErrTI_bonds; allErrTI_BOM], 99.5)];
+
+% --- Figure 12a: TI error boxplot — PAM bonds benchmark -----------------
+fig = figure(); clf;
+boxplot([err_TI_M1(:), err_TI_M2w(:), err_TI_M2m(:), err_TI_M2q(:)], ...
+  'Labels', {'bonds-M1','bonds-M2w','bonds-M2m','bonds-M2q'});
 yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
+ylim(tiBoxRange);
 formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'TI_errors_box.pdf'));
+saveas(fig, fullfile(figDir,'TI_errors_box_bonds.pdf'));
+
+% --- Figure 12b: TI error boxplot — PAM bonds+BOM benchmark -------------
+fig = figure(); clf;
+boxplot([err_BOM_TI_M1(:), err_BOM_TI_M2w(:), err_BOM_TI_M2m(:), err_BOM_TI_M2q(:)], ...
+  'Labels', {'BOM-M1','BOM-M2w','BOM-M2m','BOM-M2q'});
+yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
+ylim(tiBoxRange);
+formatFig(fig, 16, 8);
+saveas(fig, fullfile(figDir,'TI_errors_box_bom.pdf'));
 
 % --- Figure 13: TI error KDE — PAM bonds benchmark ------------------------
 fig = figure(13); clf; hold on;
@@ -701,6 +733,7 @@ kdeplot(gca, err_TI_M2w(:), 'PAM bonds vs M2 weekly',   cM2w);
 kdeplot(gca, err_TI_M2m(:), 'PAM bonds vs M2 monthly',  cM2m);
 kdeplot(gca, err_TI_M2q(:), 'PAM bonds vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
+xlim(tiKdeRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_kde_bonds.pdf'));
@@ -712,6 +745,7 @@ kdeplot(gca, err_BOM_TI_M2w(:), 'PAM bonds+BOM vs M2 weekly',   cM2w);
 kdeplot(gca, err_BOM_TI_M2m(:), 'PAM bonds+BOM vs M2 monthly',  cM2m);
 kdeplot(gca, err_BOM_TI_M2q(:), 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
+xlim(tiKdeRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_errors_kde_bom.pdf'));
@@ -749,6 +783,15 @@ err_OCI_M1  = (M1_OCI_q  - PAM_OCI_q) / 1e6;
 err_OCI_M2w = (M2w_OCI_q - PAM_OCI_q) / 1e6;
 err_OCI_M2m = (M2m_OCI_q - PAM_OCI_q) / 1e6;
 err_OCI_M2q = (M2q_OCI_q - PAM_OCI_q) / 1e6;
+
+% --- 2d. Per-quarter std summary table (for histogram description) -------
+fprintf('\nPer-quarter std summary (SEK million) | Benchmark: PAM translation\n');
+fprintf('  Std computed across %d iterations per quarter, summarised over %d quarters\n', nValid, nPeriods);
+printQStdHeader();
+printQStdRow('M1',           err_OCI_M1);
+printQStdRow('M2 weekly',    err_OCI_M2w);
+printQStdRow('M2 monthly',   err_OCI_M2m);
+printQStdRow('M2 quarterly', err_OCI_M2q);
 
 % --- Figure 15: OCI mean per quarter --------------------------------------
 fig = figure(15); clf; hold on;
@@ -829,71 +872,45 @@ ccQx = 1:ccNP;
 M1_CC_cc          = M1_CC_q(:, ccMask);
 CC_avg_cc         = CC_avg_q(:, ccMask);
 CC_close_cc       = CC_close_q(:, ccMask);
-pBonds_cc         = pBonds_q(:, ccMask);          % PAM CC bonds (rolling)
-pBOM_cc           = pBOM_q(:, ccMask);            % PAM CC BOM   (rolling)
-pBonds_daily_cc   = pBonds_daily_q(:, ccMask);    % PAM CC bonds (daily)
-pBOM_daily_cc     = pBOM_daily_q(:, ccMask);      % PAM CC BOM   (daily)
+pBonds_cc         = pBonds_q(:, ccMask);          % PAM bonds (rolling)
+pBOM_cc           = pBOM_q(:, ccMask);            % PAM bonds+BOM   (rolling)
+pBonds_daily_cc   = pBonds_daily_q(:, ccMask);    % PAM bonds (daily)
+pBOM_daily_cc     = pBOM_daily_q(:, ccMask);      % PAM bonds+BOM   (daily)
 N_obs_cc          = nValid * ccNP;
 
 % --- 3a. Actual values table ----------------------------------------------
 fprintf('\nActual mean values per quarter (SEK millions, mean over %d iterations)\n', nValid);
 fprintf('(2008 onwards; 2007 excluded — no prior-year CNY rates available)\n');
 printActualTable( ...
-  {'PAM bonds (roll)','PAM BOM (roll)','PAM bonds (daily)','PAM BOM (daily)','M1 CC','CC avg','CC close'}, ...
-  {pBonds_cc, pBOM_cc, pBonds_daily_cc, pBOM_daily_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
+  {'PAM bonds','PAM bonds+BOM','M1 CC','CC avg','CC close'}, ...
+  {pBonds_daily_cc, pBOM_daily_cc, M1_CC_cc, CC_avg_cc, CC_close_cc}, ...
   ccPD, ccNP);
 
-% --- 3b. Error table — PAM bonds (asset-walk, rolling) as benchmark ------
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC bonds (asset-walk, rolling PY)\n');
+% --- 3b. Error table — PAM bonds as benchmark ----------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds (asset-walk, daily PY)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM bonds      vs  M1 CC',    M1_CC_cc,  pBonds_cc);
-printRow('PAM bonds      vs  CC avg',   CC_avg_cc, pBonds_cc);
-printRow('PAM bonds      vs  CC close', CC_close_cc, pBonds_cc);
+printRow('PAM bonds      vs  M1 CC',    M1_CC_cc,    pBonds_daily_cc);
+printRow('PAM bonds      vs  CC avg',   CC_avg_cc,   pBonds_daily_cc);
+printRow('PAM bonds      vs  CC close', CC_close_cc, pBonds_daily_cc);
 fprintf('%s\n', repmat('-',1,112));
 fprintf('  Industry CC vs industry CC\n');
 printRow('M1 CC          vs  CC avg',   M1_CC_cc,  CC_avg_cc);
 printRow('M1 CC          vs  CC close', M1_CC_cc,  CC_close_cc);
 printRow('CC avg         vs  CC close', CC_avg_cc, CC_close_cc);
 
-% --- 3c. Error table — PAM BOM (asset-walk, rolling) as benchmark --------
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC BOM (asset-walk, rolling PY)\n');
+% --- 3c. Error table — PAM bonds+BOM as benchmark ------------------------
+fprintf('\nError terms (quarterly obs) | Benchmark: PAM bonds+BOM (asset-walk, daily PY)\n');
 fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
 printHeader();
-printRow('PAM BOM        vs  M1 CC',    M1_CC_cc,  pBOM_cc);
-printRow('PAM BOM        vs  CC avg',   CC_avg_cc, pBOM_cc);
-printRow('PAM BOM        vs  CC close', CC_close_cc, pBOM_cc);
+printRow('PAM bonds+BOM  vs  M1 CC',    M1_CC_cc,    pBOM_daily_cc);
+printRow('PAM bonds+BOM  vs  CC avg',   CC_avg_cc,   pBOM_daily_cc);
+printRow('PAM bonds+BOM  vs  CC close', CC_close_cc, pBOM_daily_cc);
 fprintf('%s\n', repmat('-',1,112));
-fprintf('  PAM bonds vs PAM BOM (size of BOM-scope contribution)\n');
-printRow('PAM BOM        vs  PAM bonds', pBOM_cc, pBonds_cc);
+fprintf('  PAM bonds vs PAM bonds+BOM (size of BOM-scope contribution)\n');
+printRow('PAM bonds+BOM  vs  PAM bonds', pBOM_daily_cc, pBonds_daily_cc);
 
-% --- 3d. Error table — Daily PY anchor variants -------------------------
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC bonds (asset-walk, daily PY)\n');
-fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
-printHeader();
-printRow('PAM bonds (d) vs  M1 CC',    M1_CC_cc,    pBonds_daily_cc);
-printRow('PAM bonds (d) vs  CC avg',   CC_avg_cc,   pBonds_daily_cc);
-printRow('PAM bonds (d) vs  CC close', CC_close_cc, pBonds_daily_cc);
-
-fprintf('\nError terms (quarterly obs) | Benchmark: PAM CC BOM (asset-walk, daily PY)\n');
-fprintf('N = %d obs (%d iterations x %d quarters, 2008+)\n', N_obs_cc, nValid, ccNP);
-printHeader();
-printRow('PAM BOM (d)   vs  M1 CC',    M1_CC_cc,    pBOM_daily_cc);
-printRow('PAM BOM (d)   vs  CC avg',   CC_avg_cc,   pBOM_daily_cc);
-printRow('PAM BOM (d)   vs  CC close', CC_close_cc, pBOM_daily_cc);
-
-fprintf('\n  Rolling vs daily anchor (size of anchor-choice effect)\n');
-printRow('PAM bonds (d) vs  PAM bonds (r)', pBonds_daily_cc, pBonds_cc);
-printRow('PAM BOM   (d) vs  PAM BOM   (r)', pBOM_daily_cc,   pBOM_cc);
-
-err_BOM_M1    = (M1_CC_cc    - pBOM_cc)   / 1e6;
-err_BOM_avg   = (CC_avg_cc   - pBOM_cc)   / 1e6;
-err_BOM_close = (CC_close_cc - pBOM_cc)   / 1e6;
-err_bonds_M1  = (M1_CC_cc    - pBonds_cc) / 1e6;
-err_bonds_avg = (CC_avg_cc   - pBonds_cc) / 1e6;
-err_bonds_close = (CC_close_cc - pBonds_cc) / 1e6;
-
-% Daily-anchor variants
+% Daily-anchor error series (only variant used downstream in plots)
 err_BOM_daily_M1      = (M1_CC_cc    - pBOM_daily_cc)   / 1e6;
 err_BOM_daily_avg     = (CC_avg_cc   - pBOM_daily_cc)   / 1e6;
 err_BOM_daily_close   = (CC_close_cc - pBOM_daily_cc)   / 1e6;
@@ -901,102 +918,98 @@ err_bonds_daily_M1    = (M1_CC_cc    - pBonds_daily_cc) / 1e6;
 err_bonds_daily_avg   = (CC_avg_cc   - pBonds_daily_cc) / 1e6;
 err_bonds_daily_close = (CC_close_cc - pBonds_daily_cc) / 1e6;
 
-cPbonds   = [0.0 0.4 0.8];   % blue   for PAM bonds (rolling)
-cPBOM     = [0.8 0.4 0.0];   % orange for PAM BOM   (rolling)
-cPbondsD  = [0.3 0.6 1.0];   % light blue   for PAM bonds (daily)
-cPBOMD    = [1.0 0.6 0.3];   % light orange for PAM BOM   (daily)
+% --- 3d. Per-quarter std summary tables (for histogram descriptions) -----
+fprintf('\nPer-quarter std summary (SEK million) | Benchmark: PAM bonds (daily PY)\n');
+fprintf('  Std computed across %d iterations per quarter, summarised over %d quarters\n', nValid, ccNP);
+printQStdHeader();
+printQStdRow('M1 CC',    err_bonds_daily_M1);
+printQStdRow('CC avg',   err_bonds_daily_avg);
+printQStdRow('CC close', err_bonds_daily_close);
 
-% --- Figure 19: CC mean per quarter — PAM CC vs Industry CC --------------
+fprintf('\nPer-quarter std summary (SEK million) | Benchmark: PAM bonds+BOM (daily PY)\n');
+fprintf('  Std computed across %d iterations per quarter, summarised over %d quarters\n', nValid, ccNP);
+printQStdHeader();
+printQStdRow('M1 CC',    err_BOM_daily_M1);
+printQStdRow('CC avg',   err_BOM_daily_avg);
+printQStdRow('CC close', err_BOM_daily_close);
+
+% --- Figure 19: CC mean per quarter — PAM vs Industry CC ---------------
+% PAM bonds = cPAM solid (same as TI/OCI); PAM bonds+BOM = cPAM dashed
 fig = figure(19); clf; hold on;
-plot(ccQx, mu(pBOM_cc),         '-o',  'Color',cPBOM,    'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC bonds+BOM (rolling PY-month)');
-plot(ccQx, mu(pBonds_cc),       '-o',  'Color',cPbonds,  'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM CC bonds (rolling PY-month)');
-plot(ccQx, mu(pBOM_daily_cc),   '--d', 'Color',cPBOMD,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','PAM CC bonds+BOM (daily PY-day)');
-plot(ccQx, mu(pBonds_daily_cc), '--d', 'Color',cPbondsD, 'LineWidth',1.2,'MarkerSize',3,'DisplayName','PAM CC bonds (daily PY-day)');
-plot(ccQx, mu(M1_CC_cc),        '-s',  'Color',cM1,      'LineWidth',1.0,'MarkerSize',3,'DisplayName','M1 CC (industry)');
-plot(ccQx, mu(CC_avg_cc),       '-s',  'Color',cCCavg,   'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC avg (industry)');
-plot(ccQx, mu(CC_close_cc),     '-s',  'Color',cCCcls,   'LineWidth',1.0,'MarkerSize',3,'DisplayName','CC close (industry)');
+plot(ccQx, mu(pBonds_daily_cc), '-o',  'Color',cPAM,   'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(ccQx, mu(pBOM_daily_cc),   '--s', 'Color',cPAM,   'LineWidth',1.1,'MarkerSize',3,'DisplayName','PAM bonds+BOM');
+plot(ccQx, mu(M1_CC_cc),        '-o',  'Color',cM1,    'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
+plot(ccQx, mu(CC_avg_cc),       '-o',  'Color',cM2m, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
+plot(ccQx, mu(CC_close_cc),     '-o',  'Color',cM2q, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million');
-title('PAM CC (rolling + daily) vs Industry CC — mean per quarter');
+title('CC — mean per quarter');
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_pamCC_vs_industry_mean.pdf'));
+saveas(fig, fullfile(figDir,'CC_actual.pdf'));
 
-% --- Figure 20: CC cumulative — PAM CC vs Industry CC -------------------
+% --- Figure 20: CC cumulative — PAM vs Industry CC ---------------------
 fig = figure(20); clf; hold on;
-plot(ccQx, cumsum(mu(pBOM_cc)),         '-o',  'Color',cPBOM,    'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds+BOM (rolling PY-month)');
-plot(ccQx, cumsum(mu(pBonds_cc)),       '-o',  'Color',cPbonds,  'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds (rolling PY-month)');
-plot(ccQx, cumsum(mu(pBOM_daily_cc)),   '--d', 'Color',cPBOMD,   'LineWidth',1.4,'MarkerSize',3,'DisplayName','PAM CC bonds+BOM (daily PY-day)');
-plot(ccQx, cumsum(mu(pBonds_daily_cc)), '--d', 'Color',cPbondsD, 'LineWidth',1.4,'MarkerSize',3,'DisplayName','PAM CC bonds (daily PY-day)');
-plot(ccQx, cumsum(mu(M1_CC_cc)),        '-s',  'Color',cM1,      'LineWidth',1.2,'MarkerSize',3,'DisplayName','M1 CC (industry)');
-plot(ccQx, cumsum(mu(CC_avg_cc)),       '-s',  'Color',cCCavg,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC avg (industry, monthly average)');
-plot(ccQx, cumsum(mu(CC_close_cc)),     '-s',  'Color',cCCcls,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC close (industry, period-opening)');
+plot(ccQx, cumsum(mu(pBonds_daily_cc)), '-o',  'Color',cPAM,   'LineWidth',1.5,'MarkerSize',3,'DisplayName','PAM bonds');
+plot(ccQx, cumsum(mu(pBOM_daily_cc)),   '--s', 'Color',cPAM,   'LineWidth',1.1,'MarkerSize',3,'DisplayName','PAM bonds+BOM');
+plot(ccQx, cumsum(mu(M1_CC_cc)),        '-o',  'Color',cM1,    'LineWidth',1.3,'MarkerSize',3,'DisplayName','M1 CC');
+plot(ccQx, cumsum(mu(CC_avg_cc)),       '-o',  'Color',cM2m, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC avg');
+plot(ccQx, cumsum(mu(CC_close_cc)),     '-o',  'Color',cM2q, 'LineWidth',1.3,'MarkerSize',3,'DisplayName','CC close');
 yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
 set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
 ylabel('SEK million');
-title('PAM CC (rolling + daily) vs Industry CC — cumulative');
+title('CC — cumulative');
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_pamCC_vs_industry_cum.pdf'));
+saveas(fig, fullfile(figDir,'CC_actual_cum.pdf'));
 
-% --- Figure 20b: CC cumulative — PAM CC daily ONLY vs Industry CC -------
-fig = figure(); clf; hold on;
-plot(ccQx, cumsum(mu(pBOM_daily_cc)),   '-d', 'Color',cPBOMD,   'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds+BOM (daily PY-day)');
-plot(ccQx, cumsum(mu(pBonds_daily_cc)), '-d', 'Color',cPbondsD, 'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds (daily PY-day)');
-plot(ccQx, cumsum(mu(M1_CC_cc)),        '-s', 'Color',cM1,      'LineWidth',1.2,'MarkerSize',3,'DisplayName','M1 CC (industry)');
-plot(ccQx, cumsum(mu(CC_avg_cc)),       '-s', 'Color',cCCavg,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC avg (industry, monthly average)');
-plot(ccQx, cumsum(mu(CC_close_cc)),     '-s', 'Color',cCCcls,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC close (industry, period-opening)');
-yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
-set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
-ylabel('SEK million');
-title('PAM CC (daily PY) vs Industry CC — cumulative');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_pamCC_daily_vs_industry_cum.pdf'));
+fprintf('\n*** PAM CC plots saved to: %s/CC_actual.pdf, CC_actual_cum.pdf ***\n\n', figDir);
 
-% --- Figure 20c: CC cumulative — PAM CC rolling ONLY vs Industry CC -----
-fig = figure(); clf; hold on;
-plot(ccQx, cumsum(mu(pBOM_cc)),     '-o', 'Color',cPBOM,    'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds+BOM (rolling PY-month)');
-plot(ccQx, cumsum(mu(pBonds_cc)),   '-o', 'Color',cPbonds,  'LineWidth',1.8,'MarkerSize',3,'DisplayName','PAM CC bonds (rolling PY-month)');
-plot(ccQx, cumsum(mu(M1_CC_cc)),    '-s', 'Color',cM1,      'LineWidth',1.2,'MarkerSize',3,'DisplayName','M1 CC (industry)');
-plot(ccQx, cumsum(mu(CC_avg_cc)),   '-s', 'Color',cCCavg,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC avg (industry, monthly average)');
-plot(ccQx, cumsum(mu(CC_close_cc)), '-s', 'Color',cCCcls,   'LineWidth',1.2,'MarkerSize',3,'DisplayName','CC close (industry, period-opening)');
-yline(0,'k--','LineWidth',0.8,'HandleVisibility','off');
-set(gca,'XTick',ccQx,'XTickLabel',ccXTickLbls,'XTickLabelRotation',0);
-ylabel('SEK million');
-title('PAM CC (rolling PY) vs Industry CC — cumulative');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_pamCC_rolling_vs_industry_cum.pdf'));
+% Shared y-axis for bonds vs bonds+BOM box / KDE / std comparisons
+allErrCC_bonds = [err_bonds_daily_M1(:); err_bonds_daily_avg(:); err_bonds_daily_close(:)];
+allErrCC_BOM   = [err_BOM_daily_M1(:);   err_BOM_daily_avg(:);   err_BOM_daily_close(:)];
+ccBoxRange     = [min([allErrCC_bonds; allErrCC_BOM], [], 'omitnan'), ...
+                  max([allErrCC_bonds; allErrCC_BOM], [], 'omitnan')];
+ccKdeRange     = [prctile([allErrCC_bonds; allErrCC_BOM], 0.5), ...
+                  prctile([allErrCC_bonds; allErrCC_BOM], 99.5)];
 
-fprintf('\n*** PAM CC plots saved to: %s/CC_pamCC_*_vs_industry_cum.pdf ***\n\n', figDir);
-
-% --- Figure 21: CC error boxplot ------------------------------------------
-fig = figure(21); clf;
-boxplot([err_BOM_M1(:),   err_BOM_avg(:),   err_BOM_close(:), ...
-         err_bonds_M1(:), err_bonds_avg(:), err_bonds_close(:)], ...
-  'Labels', {'b+BOM-M1','b+BOM-avg','b+BOM-close','bonds-M1','bonds-avg','bonds-close'});
+% --- Figure 21a: CC error boxplot — PAM bonds --------------------------
+fig = figure(); clf;
+boxplot([err_bonds_daily_M1(:), err_bonds_daily_avg(:), err_bonds_daily_close(:)], ...
+  'Labels', {'bonds-M1','bonds-avg','bonds-close'});
 yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
+ylim(ccBoxRange);
 formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_errors_box.pdf'));
+saveas(fig, fullfile(figDir,'CC_errors_box_bonds.pdf'));
 
-% --- Figure 22: CC error KDE — PAM BOM benchmark -------------------------
+% --- Figure 21b: CC error boxplot — PAM bonds+BOM ---------------------
+fig = figure(); clf;
+boxplot([err_BOM_daily_M1(:), err_BOM_daily_avg(:), err_BOM_daily_close(:)], ...
+  'Labels', {'BOM-M1','BOM-avg','BOM-close'});
+yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
+ylim(ccBoxRange);
+formatFig(fig, 16, 8);
+saveas(fig, fullfile(figDir,'CC_errors_box_bom.pdf'));
+
+% --- Figure 22: CC error KDE — PAM bonds+BOM benchmark -----------------
 fig = figure(22); clf; hold on;
-kdeplot(gca, err_BOM_M1(:),    'PAM bonds+BOM vs M1 CC',    cM1);
-kdeplot(gca, err_BOM_avg(:),   'PAM bonds+BOM vs CC avg',   cCCavg);
-kdeplot(gca, err_BOM_close(:), 'PAM bonds+BOM vs CC close', cCCcls);
+kdeplot(gca, err_BOM_daily_M1(:),    'PAM bonds+BOM vs M1 CC',    cM1);
+kdeplot(gca, err_BOM_daily_avg(:),   'PAM bonds+BOM vs CC avg',   cM2m);
+kdeplot(gca, err_BOM_daily_close(:), 'PAM bonds+BOM vs CC close', cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
+xlim(ccKdeRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bom.pdf'));
 
-% --- Figure 23: CC error KDE — PAM bonds benchmark -----------------------
+% --- Figure 23: CC error KDE — PAM bonds benchmark ---------------------
 fig = figure(23); clf; hold on;
-kdeplot(gca, err_bonds_M1(:),    'PAM bonds vs M1 CC',    cM1);
-kdeplot(gca, err_bonds_avg(:),   'PAM bonds vs CC avg',   cCCavg);
-kdeplot(gca, err_bonds_close(:), 'PAM bonds vs CC close', cCCcls);
+kdeplot(gca, err_bonds_daily_M1(:),    'PAM bonds vs M1 CC',    cM1);
+kdeplot(gca, err_bonds_daily_avg(:),   'PAM bonds vs CC avg',   cM2m);
+kdeplot(gca, err_bonds_daily_close(:), 'PAM bonds vs CC close', cM2q);
 xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
+xlim(ccKdeRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
@@ -1007,6 +1020,14 @@ saveas(fig, fullfile(figDir,'CC_errors_kde_bonds.pdf'));
 % → nPeriods values. Histogram shows how simulation noise varies over time.
 % =========================================================================
 
+% Shared per-quarter std range for TI bonds vs bonds+BOM std histograms
+tiStdAll_bonds = [std(err_TI_M1, 0, 1), std(err_TI_M2w, 0, 1), ...
+                  std(err_TI_M2m, 0, 1), std(err_TI_M2q, 0, 1)];
+tiStdAll_BOM   = [std(err_BOM_TI_M1, 0, 1), std(err_BOM_TI_M2w, 0, 1), ...
+                  std(err_BOM_TI_M2m, 0, 1), std(err_BOM_TI_M2q, 0, 1)];
+tiStdRange     = [min([tiStdAll_bonds, tiStdAll_BOM]), ...
+                  max([tiStdAll_bonds, tiStdAll_BOM])];
+
 % --- Figure 24: TI per-quarter std — PAM bonds benchmark ------------------
 fig = figure(); hold on;
 stdHist(gca, err_TI_M1,  'PAM bonds vs M1',          cM1);
@@ -1014,6 +1035,7 @@ stdHist(gca, err_TI_M2w, 'PAM bonds vs M2 weekly',   cM2w);
 stdHist(gca, err_TI_M2m, 'PAM bonds vs M2 monthly',  cM2m);
 stdHist(gca, err_TI_M2q, 'PAM bonds vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+xlim(tiStdRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bonds.pdf'));
@@ -1025,6 +1047,7 @@ stdHist(gca, err_BOM_TI_M2w, 'PAM bonds+BOM vs M2 weekly',   cM2w);
 stdHist(gca, err_BOM_TI_M2m, 'PAM bonds+BOM vs M2 monthly',  cM2m);
 stdHist(gca, err_BOM_TI_M2q, 'PAM bonds+BOM vs M2 quarterly',cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+xlim(tiStdRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'TI_std_hist_bom.pdf'));
@@ -1040,78 +1063,37 @@ legend('Location','Best'); grid on; title('OCI — quarterly std');
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'OCI_std_hist.pdf'));
 
-% --- Figure 27: CC per-quarter std — PAM BOM benchmark --------------------
+% Shared per-quarter std range for bonds vs bonds+BOM CC std histograms
+ccStdAll_bonds = [std(err_bonds_daily_M1,    0, 1), ...
+                  std(err_bonds_daily_avg,   0, 1), ...
+                  std(err_bonds_daily_close, 0, 1)];
+ccStdAll_BOM   = [std(err_BOM_daily_M1,    0, 1), ...
+                  std(err_BOM_daily_avg,   0, 1), ...
+                  std(err_BOM_daily_close, 0, 1)];
+ccStdRange     = [min([ccStdAll_bonds, ccStdAll_BOM]), ...
+                  max([ccStdAll_bonds, ccStdAll_BOM])];
+
+% --- Figure 27: CC per-quarter std — PAM bonds+BOM benchmark -----------
 fig = figure(); hold on;
-stdHist(gca, err_BOM_M1,    'PAM bonds+BOM vs M1 CC',    cM1);
-stdHist(gca, err_BOM_avg,   'PAM bonds+BOM vs CC avg',   cCCavg);
-stdHist(gca, err_BOM_close, 'PAM bonds+BOM vs CC close', cCCcls);
+stdHist(gca, err_BOM_daily_M1,    'PAM bonds+BOM vs M1 CC',    cM1);
+stdHist(gca, err_BOM_daily_avg,   'PAM bonds+BOM vs CC avg',   cM2m);
+stdHist(gca, err_BOM_daily_close, 'PAM bonds+BOM vs CC close', cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+xlim(ccStdRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bom.pdf'));
 
-% --- Figure 28: CC per-quarter std — PAM bonds benchmark ------------------
+% --- Figure 28: CC per-quarter std — PAM bonds benchmark ---------------
 fig = figure(); hold on;
-stdHist(gca, err_bonds_M1,    'PAM bonds vs M1 CC',    cM1);
-stdHist(gca, err_bonds_avg,   'PAM bonds vs CC avg',   cCCavg);
-stdHist(gca, err_bonds_close, 'PAM bonds vs CC close', cCCcls);
+stdHist(gca, err_bonds_daily_M1,    'PAM bonds vs M1 CC',    cM1);
+stdHist(gca, err_bonds_daily_avg,   'PAM bonds vs CC avg',   cM2m);
+stdHist(gca, err_bonds_daily_close, 'PAM bonds vs CC close', cM2q);
 xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
+xlim(ccStdRange);
 legend('Location','Best'); grid on;
 formatFig(fig, 16, 8);
 saveas(fig, fullfile(figDir,'CC_std_hist_bonds.pdf'));
-
-% =========================================================================
-% FIGURES 29-33: Daily-anchor variants — parallel to figs 21-23, 27-28
-% =========================================================================
-
-% --- Figure 29: CC error boxplot — DAILY anchor ---------------------------
-fig = figure(); clf;
-boxplot([err_BOM_daily_M1(:),   err_BOM_daily_avg(:),   err_BOM_daily_close(:), ...
-         err_bonds_daily_M1(:), err_bonds_daily_avg(:), err_bonds_daily_close(:)], ...
-  'Labels', {'b+BOM(d)-M1','b+BOM(d)-avg','b+BOM(d)-close','bonds(d)-M1','bonds(d)-avg','bonds(d)-close'});
-yline(0,'k--','HandleVisibility','off'); ylabel('SEK million');
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_errors_box_daily.pdf'));
-
-% --- Figure 30: CC error KDE — PAM BOM (daily) benchmark -----------------
-fig = figure(); clf; hold on;
-kdeplot(gca, err_BOM_daily_M1(:),    'PAM bonds+BOM (daily) vs M1 CC',    cM1);
-kdeplot(gca, err_BOM_daily_avg(:),   'PAM bonds+BOM (daily) vs CC avg',   cCCavg);
-kdeplot(gca, err_BOM_daily_close(:), 'PAM bonds+BOM (daily) vs CC close', cCCcls);
-xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_errors_kde_bom_daily.pdf'));
-
-% --- Figure 31: CC error KDE — PAM bonds (daily) benchmark ---------------
-fig = figure(); clf; hold on;
-kdeplot(gca, err_bonds_daily_M1(:),    'PAM bonds (daily) vs M1 CC',    cM1);
-kdeplot(gca, err_bonds_daily_avg(:),   'PAM bonds (daily) vs CC avg',   cCCavg);
-kdeplot(gca, err_bonds_daily_close(:), 'PAM bonds (daily) vs CC close', cCCcls);
-xline(0,'k--','HandleVisibility','off'); xlabel('Error (SEK million)'); ylabel('Density');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_errors_kde_bonds_daily.pdf'));
-
-% --- Figure 32: CC per-quarter std — PAM BOM (daily) benchmark -----------
-fig = figure(); hold on;
-stdHist(gca, err_BOM_daily_M1,    'PAM bonds+BOM (daily) vs M1 CC',    cM1);
-stdHist(gca, err_BOM_daily_avg,   'PAM bonds+BOM (daily) vs CC avg',   cCCavg);
-stdHist(gca, err_BOM_daily_close, 'PAM bonds+BOM (daily) vs CC close', cCCcls);
-xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_std_hist_bom_daily.pdf'));
-
-% --- Figure 33: CC per-quarter std — PAM bonds (daily) benchmark ---------
-fig = figure(); hold on;
-stdHist(gca, err_bonds_daily_M1,    'PAM bonds (daily) vs M1 CC',    cM1);
-stdHist(gca, err_bonds_daily_avg,   'PAM bonds (daily) vs CC avg',   cCCavg);
-stdHist(gca, err_bonds_daily_close, 'PAM bonds (daily) vs CC close', cCCcls);
-xlabel('Per-quarter Std (SEK million)'); ylabel('Count');
-legend('Location','Best'); grid on;
-formatFig(fig, 16, 8);
-saveas(fig, fullfile(figDir,'CC_std_hist_bonds_daily.pdf'));
 
 % =========================================================================
 % SENSITIVITY — Timing-parameter sweep
@@ -1143,6 +1125,27 @@ function printErrRow(label, A, B)
   ci_hw = 1.96 * s / sqrt(n);
   fprintf('%-34s %12.0f %12.0f   [%12.0f, %12.0f]  %12.0f\n', ...
     label, me, s, me-ci_hw, me+ci_hw, rmse);
+end
+
+function printQStdHeader()
+  fprintf('%s\n', repmat('=', 1, 92));
+  fprintf('%-14s %10s %10s %10s %10s %10s %10s %10s\n', ...
+    'Method', 'min', 'p10', 'median', 'mean', 'p90', 'p95', 'max');
+  fprintf('%s\n', repmat('-', 1, 92));
+end
+
+function printQStdRow(label, errMat)
+% errMat is [K x P] in SEK million. Computes std across K for each period (column),
+% then summarises the resulting P values via percentiles and extremes.
+  qstd = std(errMat, 0, 1);   % [1 x P]
+  qstd = qstd(~isnan(qstd));
+  if isempty(qstd)
+    fprintf('%-14s %s\n', label, '<no data>');
+    return;
+  end
+  fprintf('%-14s %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f\n', ...
+    label, min(qstd), prctile(qstd, 10), median(qstd), mean(qstd), ...
+    prctile(qstd, 90), prctile(qstd, 95), max(qstd));
 end
 
 function plotSilvermanKDE(ax, e, lbl, col)
