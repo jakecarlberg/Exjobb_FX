@@ -933,6 +933,21 @@ printQStdRow('M1 CC',    err_BOM_daily_M1);
 printQStdRow('CC avg',   err_BOM_daily_avg);
 printQStdRow('CC close', err_BOM_daily_close);
 
+% --- 3e. Error distribution percentile tables (for KDE / boxplot description) --
+fprintf('\nError distribution percentiles (SEK million) | Benchmark: PAM bonds (daily PY)\n');
+fprintf('  Pooled over %d iterations x %d quarters per row\n', nValid, ccNP);
+printDistHeader();
+printDistRow('M1 CC',    err_bonds_daily_M1);
+printDistRow('CC avg',   err_bonds_daily_avg);
+printDistRow('CC close', err_bonds_daily_close);
+
+fprintf('\nError distribution percentiles (SEK million) | Benchmark: PAM bonds+BOM (daily PY)\n');
+fprintf('  Pooled over %d iterations x %d quarters per row\n', nValid, ccNP);
+printDistHeader();
+printDistRow('M1 CC',    err_BOM_daily_M1);
+printDistRow('CC avg',   err_BOM_daily_avg);
+printDistRow('CC close', err_BOM_daily_close);
+
 % --- Figure 19: CC mean per quarter — PAM vs Industry CC ---------------
 % PAM bonds = cPAM solid (same as TI/OCI); PAM bonds+BOM = cPAM dashed
 fig = figure(19); clf; hold on;
@@ -971,8 +986,7 @@ allErrCC_bonds = [err_bonds_daily_M1(:); err_bonds_daily_avg(:); err_bonds_daily
 allErrCC_BOM   = [err_BOM_daily_M1(:);   err_BOM_daily_avg(:);   err_BOM_daily_close(:)];
 ccBoxRange     = [min([allErrCC_bonds; allErrCC_BOM], [], 'omitnan'), ...
                   max([allErrCC_bonds; allErrCC_BOM], [], 'omitnan')];
-ccKdeRange     = [min([allErrCC_bonds; allErrCC_BOM], [], 'omitnan'), ...
-                  max([allErrCC_bonds; allErrCC_BOM], [], 'omitnan')];
+ccKdeRange     = [-600, 600];   % MSEK, fixed range for CC KDE so tails fully visible
 
 % --- Figure 21a: CC error boxplot — PAM bonds --------------------------
 fig = figure(); clf;
@@ -1146,6 +1160,29 @@ function printQStdRow(label, errMat)
   fprintf('%-14s %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f\n', ...
     label, min(qstd), prctile(qstd, 10), median(qstd), mean(qstd), ...
     prctile(qstd, 90), prctile(qstd, 95), max(qstd));
+end
+
+function printDistHeader()
+% Header for pooled-distribution percentile tables (boxplot / KDE info)
+  fprintf('%s\n', repmat('=', 1, 108));
+  fprintf('%-14s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n', ...
+    'Method', 'min', 'p1', 'p5', 'p25', 'median', 'p75', 'p95', 'p99', 'max');
+  fprintf('%s\n', repmat('-', 1, 108));
+end
+
+function printDistRow(label, errMat)
+% errMat is [K x P] in SEK million. Pools all K*P observations and reports
+% percentiles describing the full error distribution (boxplot quartiles
+% + KDE tails). Read this to interpret error_kde and error_box plots.
+  e = errMat(:);
+  e = e(~isnan(e));
+  if isempty(e)
+    fprintf('%-14s %s\n', label, '<no data>');
+    return;
+  end
+  fprintf('%-14s %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f %10.2f\n', ...
+    label, min(e), prctile(e, 1), prctile(e, 5), prctile(e, 25), ...
+    median(e), prctile(e, 75), prctile(e, 95), prctile(e, 99), max(e));
 end
 
 function plotSilvermanKDE(ax, e, lbl, col)
